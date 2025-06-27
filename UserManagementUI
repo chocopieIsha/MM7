@@ -1,0 +1,513 @@
+// UserManagementUI.java
+import javax.swing.*;
+import javax.swing.border.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+public class UserManagementUI extends JFrame {
+    private UserManager userManager;
+    private JTable userTable;
+    private DefaultTableModel tableModel;
+
+    // Color scheme
+    private final Color BROWN_THEME = new Color(139, 69, 19); // SaddleBrown
+    private final Color LIGHT_BROWN = new Color(210, 180, 140); // Tan
+    private final Color CREAM = new Color(255, 253, 245); // Off-white cream
+    private final Color ACCENT_COLOR = new Color(218, 165, 32); // Gold accent
+
+    public UserManagementUI() {
+        this.userManager = new UserManager();
+        createUI();
+    }
+
+    private void createUI() {
+        setTitle("User Management - Macrina System");
+        setSize(1000, 650);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(CREAM);
+
+        // Main panel with border layout
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        mainPanel.setBackground(CREAM);
+
+        // Title panel
+        JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        titlePanel.setBackground(CREAM);
+        JLabel titleLabel = new JLabel("USER MANAGEMENT SYSTEM");
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        titleLabel.setForeground(BROWN_THEME);
+        titlePanel.add(titleLabel);
+        mainPanel.add(titlePanel, BorderLayout.NORTH);
+
+        // Table with scroll pane
+        String[] columnNames = {"Username", "Full Name", "Role", "Date Created", "Last Login", "Status"};
+        tableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+
+            @Override
+            public Class<?> getColumnClass(int column) {
+                return String.class;
+            }
+        };
+
+        userTable = new JTable(tableModel) {
+            @Override
+            public Component prepareRenderer(javax.swing.table.TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ? CREAM : LIGHT_BROWN);
+                    c.setForeground(Color.BLACK);
+
+                    // Highlight status column
+                    if (column == 5) {
+                        String status = getValueAt(row, column).toString();
+                        if (status.equals("Active")) {
+                            c.setForeground(new Color(0, 100, 0)); // Dark green
+                        } else if (status.equals("Inactive")) {
+                            c.setForeground(new Color(139, 0, 0)); // Dark red
+                        }
+                    }
+                }
+                return c;
+            }
+        };
+
+        // Style the table
+        userTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        userTable.setRowHeight(30);
+        userTable.setSelectionBackground(BROWN_THEME);
+        userTable.setSelectionForeground(Color.WHITE);
+        userTable.setGridColor(BROWN_THEME);
+
+        // Style table header
+        JTableHeader header = userTable.getTableHeader();
+        header.setBackground(BROWN_THEME);
+        header.setForeground(BROWN_THEME);
+        header.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
+        JScrollPane scrollPane = new JScrollPane(userTable);
+        scrollPane.setBorder(new CompoundBorder(
+                new LineBorder(BROWN_THEME, 1),
+                new EmptyBorder(5, 5, 5, 5)
+        ));
+        mainPanel.add(scrollPane, BorderLayout.CENTER);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        buttonPanel.setBackground(CREAM);
+
+        JButton addButton = createStyledButton("Add User", BROWN_THEME);
+        JButton editButton = createStyledButton("Edit User", BROWN_THEME);
+        JButton changePassButton = createStyledButton("Change Password", ACCENT_COLOR);
+        JButton toggleStatusButton = createStyledButton("Toggle Status", LIGHT_BROWN);
+        JButton refreshButton = createStyledButton("Refresh", BROWN_THEME);
+
+        // Set preferred sizes for buttons
+        Dimension buttonSize = new Dimension(150, 35);
+        addButton.setPreferredSize(buttonSize);
+        editButton.setPreferredSize(buttonSize);
+        changePassButton.setPreferredSize(buttonSize);
+        toggleStatusButton.setPreferredSize(buttonSize);
+        refreshButton.setPreferredSize(buttonSize);
+
+        buttonPanel.add(addButton);
+        buttonPanel.add(editButton);
+        buttonPanel.add(changePassButton);
+        buttonPanel.add(toggleStatusButton);
+        buttonPanel.add(refreshButton);
+
+        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        // Add action listeners
+        addButton.addActionListener(e -> showAddUserDialog());
+        editButton.addActionListener(e -> showEditUserDialog());
+        changePassButton.addActionListener(e -> showChangePasswordDialog());
+        toggleStatusButton.addActionListener(e -> toggleUserStatus());
+        refreshButton.addActionListener(e -> refreshTable());
+
+        add(mainPanel);
+
+        // Load initial data
+        refreshTable();
+    }
+
+    private JButton createStyledButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        button.setBackground(bgColor);
+        button.setForeground(Color.BLACK);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(bgColor.darker(), 1),
+                BorderFactory.createEmptyBorder(5, 15, 5, 15)
+        ));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor.brighter());
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor);
+            }
+        });
+
+        return button;
+    }
+
+    private void refreshTable() {
+        tableModel.setRowCount(0);
+        for (User user : userManager.getAllUsers()) {
+            tableModel.addRow(new Object[]{
+                    user.getUsername(),
+                    user.getFullName(),
+                    user.getRole(),
+                    user.getDateCreated(),
+                    user.getLastLogin(),
+                    user.getStatus()
+            });
+        }
+    }
+
+    private void showAddUserDialog() {
+        JDialog dialog = new JDialog(this, "Add New User", true);
+        dialog.setLayout(new BorderLayout());
+        dialog.setSize(450, 350);
+        dialog.setLocationRelativeTo(this);
+
+        // Form panel
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        formPanel.setBackground(CREAM);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel titleLabel = new JLabel("Add New User");
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(BROWN_THEME);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        formPanel.add(titleLabel, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.gridy++;
+
+        // Username
+        JTextField usernameField = new JTextField(20);
+        addFormRow(formPanel, "Username:", usernameField, gbc);
+
+        // Full Name
+        JTextField fullNameField = new JTextField(20);
+        addFormRow(formPanel, "Full Name:", fullNameField, gbc);
+
+        // Role
+        JComboBox<String> roleCombo = new JComboBox<>(new String[]{"Admin", "Sales Clerk"});
+        roleCombo.setBackground(Color.WHITE);
+        addFormRow(formPanel, "Role:", roleCombo, gbc);
+
+        // Password
+        JPasswordField passwordField = new JPasswordField(20);
+        addFormRow(formPanel, "Password:", passwordField, gbc);
+
+        // Confirm Password
+        JPasswordField confirmPasswordField = new JPasswordField(20);
+        addFormRow(formPanel, "Confirm Password:", confirmPasswordField, gbc);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(CREAM);
+
+        JButton saveButton = createStyledButton("Save", BROWN_THEME);
+        JButton cancelButton = createStyledButton("Cancel", LIGHT_BROWN);
+
+        saveButton.addActionListener(e -> {
+            String username = usernameField.getText().trim();
+            String fullName = fullNameField.getText().trim();
+            String password = new String(passwordField.getPassword());
+            String confirmPassword = new String(confirmPasswordField.getPassword());
+
+            if (username.isEmpty() || fullName.isEmpty() || password.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please fill all fields", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (!password.equals(confirmPassword)) {
+                JOptionPane.showMessageDialog(dialog, "Passwords do not match", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (password.length() < 6) {
+                JOptionPane.showMessageDialog(dialog, "Password must be at least 6 characters", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+            User newUser = new User(
+                    username,
+                    fullName,
+                    (String) roleCombo.getSelectedItem(),
+                    date,
+                    date,
+                    "Active",
+                    password
+            );
+
+            if (userManager.addUser(newUser)) {
+                JOptionPane.showMessageDialog(dialog, "User added successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
+                refreshTable();
+                dialog.dispose();
+            } else {
+                JOptionPane.showMessageDialog(dialog, "Username already exists", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        cancelButton.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+
+        dialog.add(formPanel, BorderLayout.CENTER);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    private void addFormRow(JPanel panel, String labelText, JComponent field, GridBagConstraints gbc) {
+        JLabel label = new JLabel(labelText);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        gbc.gridx = 0;
+        panel.add(label, gbc);
+
+        gbc.gridx = 1;
+        panel.add(field, gbc);
+
+        gbc.gridy++;
+    }
+
+    private void showEditUserDialog() {
+        int selectedRow = userTable.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a user to edit", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String username = (String) tableModel.getValueAt(selectedRow, 0);
+        User user = userManager.getUser(username);
+
+        JDialog dialog = new JDialog(this, "Edit User", true);
+        dialog.setLayout(new BorderLayout());
+        dialog.setSize(450, 300);
+        dialog.setLocationRelativeTo(this);
+
+        // Form panel
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        formPanel.setBackground(CREAM);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel titleLabel = new JLabel("Edit User: " + username);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(BROWN_THEME);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        formPanel.add(titleLabel, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.gridy++;
+
+        // Username (read-only)
+        JTextField usernameField = new JTextField(user.getUsername(), 20);
+        usernameField.setEditable(false);
+        addFormRow(formPanel, "Username:", usernameField, gbc);
+
+        // Full Name
+        JTextField fullNameField = new JTextField(user.getFullName(), 20);
+        addFormRow(formPanel, "Full Name:", fullNameField, gbc);
+
+        // Role
+        JComboBox<String> roleCombo = new JComboBox<>(new String[]{"Admin", "Sales Clerk"});
+        roleCombo.setSelectedItem(user.getRole());
+        roleCombo.setBackground(Color.WHITE);
+        addFormRow(formPanel, "Role:", roleCombo, gbc);
+
+        // Status
+        JComboBox<String> statusCombo = new JComboBox<>(new String[]{"Active", "On-Leave", "Inactive"});
+        statusCombo.setSelectedItem(user.getStatus());
+        statusCombo.setBackground(Color.WHITE);
+        addFormRow(formPanel, "Status:", statusCombo, gbc);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(CREAM);
+
+        JButton saveButton = createStyledButton("Save", BROWN_THEME);
+        JButton cancelButton = createStyledButton("Cancel", LIGHT_BROWN);
+
+        saveButton.addActionListener(e -> {
+            user.setFullName(fullNameField.getText());
+            user.setRole((String) roleCombo.getSelectedItem());
+            user.setStatus((String) statusCombo.getSelectedItem());
+
+            if (userManager.updateUser(user)) {
+                JOptionPane.showMessageDialog(dialog, "User updated successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
+                refreshTable();
+                dialog.dispose();
+            } else {
+                JOptionPane.showMessageDialog(dialog, "Error updating user", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        cancelButton.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+
+        dialog.add(formPanel, BorderLayout.CENTER);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    private void showChangePasswordDialog() {
+        int selectedRow = userTable.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a user", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String username = (String) tableModel.getValueAt(selectedRow, 0);
+        User user = userManager.getUser(username);
+
+        JDialog dialog = new JDialog(this, "Change Password", true);
+        dialog.setLayout(new BorderLayout());
+        dialog.setSize(450, 250);
+        dialog.setLocationRelativeTo(this);
+
+        // Form panel
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        formPanel.setBackground(CREAM);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel titleLabel = new JLabel("Change Password for: " + username);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(BROWN_THEME);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        formPanel.add(titleLabel, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.gridy++;
+
+        // Current password (only for non-admin changing their own password)
+        if (!"Admin".equals(user.getRole())) {
+            JPasswordField currentPasswordField = new JPasswordField(20);
+            addFormRow(formPanel, "Current Password:", currentPasswordField, gbc);
+        }
+
+        // New password
+        JPasswordField newPasswordField = new JPasswordField(20);
+        addFormRow(formPanel, "New Password:", newPasswordField, gbc);
+
+        // Confirm new password
+        JPasswordField confirmPasswordField = new JPasswordField(20);
+        addFormRow(formPanel, "Confirm Password:", confirmPasswordField, gbc);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(CREAM);
+
+        JButton saveButton = createStyledButton("Save", BROWN_THEME);
+        JButton cancelButton = createStyledButton("Cancel", LIGHT_BROWN);
+
+        saveButton.addActionListener(e -> {
+            String newPassword = new String(newPasswordField.getPassword());
+            String confirmPassword = new String(confirmPasswordField.getPassword());
+
+            if (!newPassword.equals(confirmPassword)) {
+                JOptionPane.showMessageDialog(dialog, "New passwords do not match", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (newPassword.length() < 6) {
+                JOptionPane.showMessageDialog(dialog, "Password must be at least 6 characters", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if ("Admin".equals(user.getRole())) {
+                // Admin can change any password without current password
+                user.setPassword(newPassword);
+                if (userManager.updateUser(user)) {
+                    JOptionPane.showMessageDialog(dialog, "Password changed successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    dialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "Error changing password", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            } else {
+                // Non-admin must provide current password
+                String currentPassword = new String(((JPasswordField)formPanel.getComponent(3)).getPassword());
+                if (userManager.changePassword(username, currentPassword, newPassword)) {
+                    JOptionPane.showMessageDialog(dialog, "Password changed successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    dialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "Current password is incorrect", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+
+        cancelButton.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+
+        dialog.add(formPanel, BorderLayout.CENTER);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    private void toggleUserStatus() {
+        int selectedRow = userTable.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a user", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String username = (String) tableModel.getValueAt(selectedRow, 0);
+        User user = userManager.getUser(username);
+
+        String newStatus = user.getStatus().equals("Active") ? "Inactive" : "Active";
+        String message = String.format("Are you sure you want to change %s's status to %s?", username, newStatus);
+
+        int confirm = JOptionPane.showConfirmDialog(this, message, "Confirm Status Change",
+                JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            user.setStatus(newStatus);
+            userManager.updateUser(user);
+            refreshTable();
+            JOptionPane.showMessageDialog(this,
+                    String.format("User %s is now %s", username, newStatus),
+                    "Status Updated", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+}
