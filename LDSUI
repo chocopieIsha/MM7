@@ -1,0 +1,720 @@
+import javax.swing.*;
+import javax.swing.border.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.List;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
+
+public class LDSUI extends JFrame {
+    private static final Color CREAM = new Color(245, 240, 225);
+    private static final Color LIGHT_BROWN = new Color(210, 180, 140);
+    private static final Color MEDIUM_BROWN = new Color(160, 120, 90);
+    private static final Color DARK_BROWN = new Color(100, 70, 50);
+    private static final Color ACCENT_COLOR = new Color(180, 150, 120);
+
+    private static final Font HEADER_FONT = new Font("Segoe UI", Font.BOLD, 14);
+    private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 13);
+    private static final Font BUTTON_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font TABLE_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+
+    private Database database;
+    private String currentUser;
+    private List<String[]> ldsHistory = new ArrayList<>();
+    private Map<String, Color> ldsIdColors = new HashMap<>();
+    private Random random = new Random();
+
+    private JTextField dateField, ldsIdField, quantityField;
+    private JComboBox<String> employeeComboBox, typeComboBox, productComboBox;
+    private JTextArea remarksArea;
+    private JTable currentLdsTable, historyTable;
+    private DefaultTableModel currentLdsModel, historyModel;
+
+    public LDSUI(Database database, String currentUser) {
+        UserManager userManager = new UserManager();
+        User user = userManager.getUser(currentUser);
+
+        if (user != null && "Sales Clerk".equals(user.getRole())) {
+            JOptionPane.showMessageDialog(null,
+                    "Access Denied: Sales Clerks cannot access the LDS System",
+                    "Permission Denied", JOptionPane.ERROR_MESSAGE);
+            dispose();
+            return;
+        }
+
+        this.database = database;
+        this.currentUser = currentUser;
+
+        setTitle("Lost/Damaged/Stolen - Macrina System");
+        setSize(1000, 700);
+        setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(CREAM);
+        createUI();
+        setVisible(true);
+        loadExistingData();
+        loadEmployeesIntoComboBox();
+        loadProductsIntoComboBox();
+    }
+
+    private void createUI() {
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        mainPanel.setBackground(CREAM);
+        setContentPane(mainPanel);
+
+        // Top Form Panel with rounded border (made smaller)
+        JPanel formPanel = new JPanel(new GridLayout(0, 2, 15, 5));
+        formPanel.setBorder(new CompoundBorder(
+                new LineBorder(MEDIUM_BROWN, 1, true),
+                new EmptyBorder(8, 8, 8, 8)
+        ));
+        formPanel.setBackground(LIGHT_BROWN);
+        formPanel.setPreferredSize(new Dimension(980, 150)); // Reduced height
+
+        JPanel leftFormPanel = new JPanel(new GridLayout(4, 2, 5, 5));
+        leftFormPanel.setBackground(LIGHT_BROWN);
+        JPanel rightFormPanel = new JPanel(new GridLayout(4, 2, 5, 5));
+        rightFormPanel.setBackground(LIGHT_BROWN);
+
+        // Left Form (Basic Info)
+        ldsIdField = createStyledTextField(false);
+        ldsIdField.setText(generateLDSID());
+        dateField = createStyledTextField(true);
+        dateField.setText(new SimpleDateFormat("MM-dd-yy").format(new Date()));
+
+        productComboBox = createStyledStringComboBox();
+        productComboBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value != null) {
+                    setText(value.toString());
+                }
+                return this;
+            }
+        });
+
+        // Quantity field (replaced spinner)
+        quantityField = createStyledTextField(true);
+        quantityField.setText("1");
+        quantityField.setInputVerifier(new InputVerifier() {
+            @Override
+            public boolean verify(JComponent input) {
+                String text = ((JTextField) input).getText();
+                try {
+                    int value = Integer.parseInt(text);
+                    return value > 0;
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+            }
+        });
+
+        addFormRow(leftFormPanel, "LDS ID:", ldsIdField);
+        addFormRow(leftFormPanel, "Date (MM-DD-YY):", dateField);
+        addFormRow(leftFormPanel, "Product:", productComboBox);
+        addFormRow(leftFormPanel, "Quantity:", quantityField);
+
+        // Right Form (Details)
+        typeComboBox = createStyledStringComboBox();
+        typeComboBox.setEditable(true);
+        typeComboBox.addItem("Lost");
+        typeComboBox.addItem("Damaged");
+        typeComboBox.addItem("Stolen");
+
+        employeeComboBox = createStyledStringComboBox();
+        loadEmployeesIntoComboBox();
+
+        JButton addButton = createStyledButton("Add to LDS", MEDIUM_BROWN);
+        addButton.addActionListener(e -> addToLDS());
+
+        remarksArea = new JTextArea();
+        remarksArea.setFont(LABEL_FONT);
+        remarksArea.setLineWrap(true);
+        remarksArea.setWrapStyleWord(true);
+        remarksArea.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+        JScrollPane remarksScroll = new JScrollPane(remarksArea);
+        remarksScroll.setPreferredSize(new Dimension(200, 40)); // Smaller remarks area
+
+        addFormRow(rightFormPanel, "Type:", typeComboBox);
+        addFormRow(rightFormPanel, "Employee:", employeeComboBox);
+        addFormRow(rightFormPanel, "Remarks:", remarksScroll);
+        rightFormPanel.add(new JLabel()); // Empty label for spacing
+        rightFormPanel.add(addButton);
+
+        formPanel.add(leftFormPanel);
+        formPanel.add(rightFormPanel);
+        mainPanel.add(formPanel, BorderLayout.NORTH);
+
+        // Middle Table (Current LDS Items) - made more visible
+        currentLdsModel = new DefaultTableModel(new String[]{"LDSID", "ItemID", "Product Name", "Quantity", "Date", "Type", "Employee", "Remarks"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        currentLdsTable = createStyledTable(currentLdsModel);
+        JScrollPane currentLdsScrollPane = new JScrollPane(currentLdsTable);
+        currentLdsScrollPane.setBorder(new TitledBorder(
+                new LineBorder(MEDIUM_BROWN, 1),
+                "Current LDS Items",
+                TitledBorder.LEADING,
+                TitledBorder.TOP,
+                HEADER_FONT,
+                DARK_BROWN
+        ));
+        currentLdsScrollPane.setPreferredSize(new Dimension(980, 200)); // Larger table
+
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem removeItem = new JMenuItem("Remove Selected");
+        removeItem.setFont(LABEL_FONT);
+        removeItem.addActionListener(e -> removeSelectedLDSItem());
+        popupMenu.add(removeItem);
+        currentLdsTable.setComponentPopupMenu(popupMenu);
+
+        mainPanel.add(currentLdsScrollPane, BorderLayout.CENTER);
+
+        // Bottom Table (History) - made more visible
+        historyModel = new DefaultTableModel(new String[]{"LDSID", "ItemID", "Product Name", "Quantity", "Date", "Type", "Employee", "Remarks"}, 0);
+        historyTable = createStyledTable(historyModel);
+        JScrollPane historyScrollPane = new JScrollPane(historyTable);
+        historyScrollPane.setBorder(new TitledBorder(
+                new LineBorder(MEDIUM_BROWN, 1),
+                "LDS History",
+                TitledBorder.LEADING,
+                TitledBorder.TOP,
+                HEADER_FONT,
+                DARK_BROWN
+        ));
+        historyScrollPane.setPreferredSize(new Dimension(980, 250)); // Larger table
+
+        // Bottom Buttons
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(CREAM);
+
+        JButton viewDataButton = createStyledButton("View Tabular Data", ACCENT_COLOR);
+        JButton clearButton = createStyledButton("Clear", ACCENT_COLOR);
+        JButton confirmButton = createStyledButton("Confirm LDS", MEDIUM_BROWN);
+        JButton cancelButton = createStyledButton("Cancel", DARK_BROWN);
+
+        viewDataButton.addActionListener(e -> showTabularDataView());
+        clearButton.addActionListener(e -> resetForm());
+        confirmButton.addActionListener(e -> confirmLDS());
+        cancelButton.addActionListener(e -> dispose());
+
+        buttonPanel.add(viewDataButton);
+        buttonPanel.add(clearButton);
+        buttonPanel.add(confirmButton);
+        buttonPanel.add(cancelButton);
+
+        JPanel southPanel = new JPanel(new BorderLayout(10, 10));
+        southPanel.setBackground(CREAM);
+        southPanel.add(historyScrollPane, BorderLayout.CENTER);
+        southPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(southPanel, BorderLayout.SOUTH);
+    }
+
+    private JTextField createStyledTextField(boolean editable) {
+        JTextField field = new JTextField();
+        field.setEditable(editable);
+        field.setFont(LABEL_FONT);
+        field.setBackground(editable ? Color.WHITE : new Color(240, 240, 240));
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+        field.setForeground(DARK_BROWN);
+        return field;
+    }
+
+    private JComboBox<String> createStyledStringComboBox() {
+        JComboBox<String> combo = new JComboBox<>();
+        combo.setFont(LABEL_FONT);
+        combo.setBackground(Color.WHITE);
+        combo.setForeground(DARK_BROWN);
+        combo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(2, 5, 2, 5)
+        ));
+        return combo;
+    }
+
+    private void addFormRow(JPanel panel, String labelText, JComponent field) {
+        JLabel label = new JLabel(labelText);
+        label.setFont(LABEL_FONT);
+        label.setForeground(DARK_BROWN);
+        panel.add(label);
+        panel.add(field);
+    }
+
+    private JButton createStyledButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(BUTTON_FONT);
+        button.setBackground(bgColor);
+        button.setForeground(DARK_BROWN);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(bgColor.darker(), 1),
+                BorderFactory.createEmptyBorder(5, 15, 5, 15)
+        ));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor.brighter());
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor);
+            }
+        });
+
+        return button;
+    }
+
+    private JTable createStyledTable(DefaultTableModel model) {
+        JTable table = new JTable(model) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(245, 245, 245));
+                    c.setForeground(DARK_BROWN);
+                }
+
+                // Apply color coding for LDSID column (column 0)
+                if (column == 0) {
+                    String ldsId = getValueAt(row, 0).toString();
+                    Color ldsColor = ldsIdColors.computeIfAbsent(ldsId, k -> generatePastelColor());
+                    c.setBackground(blendColors(c.getBackground(), ldsColor, 0.3f));
+                    if (c instanceof JComponent) {
+                        ((JComponent) c).setFont(c.getFont().deriveFont(Font.BOLD));
+                    }
+                }
+
+                // Style type column with different colors
+                if (column == 5) { // Type column
+                    String type = getValueAt(row, column).toString();
+                    switch (type.toLowerCase()) {
+                        case "lost":
+                            c.setForeground(new Color(0, 100, 0)); // Dark green
+                            break;
+                        case "damaged":
+                            c.setForeground(new Color(160, 82, 45)); // Sienna
+                            break;
+                        case "stolen":
+                            c.setForeground(new Color(178, 34, 34)); // Firebrick
+                            break;
+                        default:
+                            c.setForeground(new Color(70, 70, 70)); // Dark gray for custom types
+                            break;
+                    }
+                }
+
+                // Set alignment for the component
+                if (c instanceof DefaultTableCellRenderer) {
+                    ((DefaultTableCellRenderer) c).setHorizontalAlignment(SwingConstants.LEFT);
+                }
+
+                return c;
+            }
+        };
+
+        table.setFont(TABLE_FONT);
+        table.setRowHeight(25);
+        table.setSelectionBackground(ACCENT_COLOR);
+        table.setSelectionForeground(Color.WHITE);
+        table.setGridColor(new Color(220, 220, 220));
+        table.setShowGrid(true);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setFillsViewportHeight(true);
+
+        JTableHeader header = table.getTableHeader();
+        header.setFont(HEADER_FONT);
+        header.setBackground(MEDIUM_BROWN);
+        header.setForeground(DARK_BROWN);
+        header.setBorder(BorderFactory.createLineBorder(DARK_BROWN, 1));
+
+        return table;
+    }
+
+    private Color generatePastelColor() {
+        // Generate pastel colors by mixing with white
+        float hue = random.nextFloat();
+        float saturation = 0.5f + random.nextFloat() * 0.3f;
+        float brightness = 0.8f + random.nextFloat() * 0.2f;
+        return Color.getHSBColor(hue, saturation, brightness);
+    }
+
+    private Color blendColors(Color bg, Color fg, float alpha) {
+        float[] bgComponents = bg.getRGBColorComponents(null);
+        float[] fgComponents = fg.getRGBColorComponents(null);
+
+        float r = bgComponents[0] * (1 - alpha) + fgComponents[0] * alpha;
+        float g = bgComponents[1] * (1 - alpha) + fgComponents[1] * alpha;
+        float b = bgComponents[2] * (1 - alpha) + fgComponents[2] * alpha;
+
+        return new Color(r, g, b);
+    }
+
+    private void loadEmployeesIntoComboBox() {
+        employeeComboBox.removeAllItems();
+        List<String> employees = database.getEmployeeIDs();
+        for (String emp : employees) {
+            employeeComboBox.addItem(emp);
+        }
+        employeeComboBox.setSelectedItem(currentUser);
+    }
+
+    private String generateLDSID() {
+        int nextLDSNumber = getNextLDSNumber();
+        return String.format("LDS-%06d", nextLDSNumber);
+    }
+
+    private int getNextLDSNumber() {
+        int maxLDSNum = 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader("LosDamStol.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("LDSID: LDS-")) {
+                    String ldsIdStr = line.substring(11);
+                    try {
+                        int ldsNum = Integer.parseInt(ldsIdStr);
+                        maxLDSNum = Math.max(maxLDSNum, ldsNum);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Warning: Malformed LDSID found: " + line);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("LDS file not found. Starting from LDS 1.");
+        }
+
+        return maxLDSNum + 1;
+    }
+
+    private void loadProductsIntoComboBox() {
+        productComboBox.removeAllItems();
+        Map<String, String> products = database.getProductsWithNames();
+        for (Map.Entry<String, String> entry : products.entrySet()) {
+            productComboBox.addItem(entry.getKey() + " - " + entry.getValue());
+        }
+    }
+
+    private void addToLDS() {
+        String selectedProduct = (String) productComboBox.getSelectedItem();
+        if (selectedProduct == null || selectedProduct.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please select a product",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String[] parts = selectedProduct.split(" - ", 2);
+        String itemId = parts[0].trim();
+        String productName = parts.length > 1 ? parts[1] : "";
+
+        int quantity;
+        try {
+            quantity = Integer.parseInt(quantityField.getText());
+            if (quantity <= 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Please enter a valid positive quantity",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Get the type - either selected from dropdown or entered manually
+        String type;
+        Object typeInput = typeComboBox.getSelectedItem();
+        if (typeInput == null) {
+            type = "";
+        } else {
+            type = typeInput.toString().trim();
+            if (type.isEmpty()) {
+                type = "Other"; // Default if empty
+            }
+        }
+
+        String employee = (String) employeeComboBox.getSelectedItem();
+        String remarks = remarksArea.getText().trim();
+
+        if (!database.productExists(itemId)) {
+            JOptionPane.showMessageDialog(this, "Selected product does not exist in inventory",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        int availableStock = database.getProductStock(itemId);
+        if (quantity > availableStock) {
+            JOptionPane.showMessageDialog(this,
+                    "Not enough stock available!\nAvailable: " + availableStock + "\nRequested: " + quantity,
+                    "Stock Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        currentLdsModel.addRow(new Object[]{
+                ldsIdField.getText(),
+                itemId,
+                productName,
+                quantity,
+                dateField.getText(),
+                type,
+                employee,
+                remarks
+        });
+
+        ldsHistory.add(new String[]{
+                ldsIdField.getText(),
+                itemId,
+                productName,
+                String.valueOf(quantity),
+                dateField.getText(),
+                type,
+                employee,
+                remarks
+        });
+
+        remarksArea.setText("");
+        quantityField.setText("1");
+        productComboBox.requestFocus();
+    }
+
+    private void removeSelectedLDSItem() {
+        int selectedRow = currentLdsTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            String ldsId = (String) currentLdsModel.getValueAt(selectedRow, 0);
+            String itemId = (String) currentLdsModel.getValueAt(selectedRow, 1);
+
+            ldsHistory.removeIf(item -> item[0].equals(ldsId) && item[1].equals(itemId));
+            currentLdsModel.removeRow(selectedRow);
+        } else {
+            JOptionPane.showMessageDialog(this, "Please select an item to remove",
+                    "No Selection", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private void confirmLDS() {
+        if (currentLdsModel.getRowCount() == 0) {
+            JOptionPane.showMessageDialog(this, "Please add items to the LDS report",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            // Ensure we have a color for this LDS ID
+            String currentLdsId = ldsIdField.getText();
+            ldsIdColors.putIfAbsent(currentLdsId, generatePastelColor());
+
+            saveLDSToFile();
+
+            // Update inventory and CSV
+            for (String[] item : ldsHistory) {
+                String productId = item[1];
+                int quantity = Integer.parseInt(item[3]);
+                boolean success = database.deductStockByProductID(productId, quantity);
+
+                if (success) {
+                    // Update CSV
+                    String productName = database.getProductName(productId);
+                    int currentStock = database.getProductStock(productId);
+                    CSVManager.updateProduct(productName, currentStock);
+
+                    // Record LDS item
+                    CSVManager.recordLDSItem(productName, dateField.getText(),
+                            (String) typeComboBox.getSelectedItem(),
+                            currentUser, remarksArea.getText());
+                }
+            }
+
+            refreshDashboardStats();
+
+            for (String[] item : ldsHistory) {
+                historyModel.addRow(item);
+            }
+
+            JOptionPane.showMessageDialog(this,
+                    "LDS report processed successfully!\n" +
+                            "LDS ID: " + currentLdsId + "\n" +
+                            "Items reported: " + currentLdsModel.getRowCount(),
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+
+            resetForm();
+
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error saving LDS report: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void refreshDashboardStats() {
+        // Find existing dashboard instance
+        for (Frame frame : JFrame.getFrames()) {
+            if (frame instanceof Dashboard) {
+                Dashboard dashboard = (Dashboard) frame;
+                dashboard.refreshStats();
+                break;
+            }
+        }
+    }
+
+    private void updateInventoryForLDS() {
+        for (String[] item : ldsHistory) {
+            String productId = item[1];
+            int quantity = Integer.parseInt(item[3]);
+            boolean success = database.deductStockByProductID(productId, quantity);
+            if (!success) {
+                System.err.println("Warning: Failed to deduct stock for product " + productId);
+            }
+        }
+    }
+
+    private void saveLDSToFile() throws IOException {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter("LosDamStol.txt", true))) {
+            for (String[] item : ldsHistory) {
+                writer.write("LDSID: " + item[0]); writer.newLine();
+                writer.write("ItemID: " + item[1]); writer.newLine();
+                writer.write("ProductName: " + item[2]); writer.newLine();
+                writer.write("Quantity: " + item[3]); writer.newLine();
+                writer.write("Date: " + item[4]); writer.newLine();
+                writer.write("Type: " + item[5]); writer.newLine();
+                writer.write("Employee: " + item[6]); writer.newLine();
+                writer.write("Remarks: " + item[7]); writer.newLine();
+                writer.newLine(); // Separate entries
+            }
+        }
+    }
+
+    private void resetForm() {
+        ldsIdField.setText(generateLDSID());
+        dateField.setText(new SimpleDateFormat("MM-dd-yy").format(new Date()));
+        remarksArea.setText("");
+        quantityField.setText("1");
+        currentLdsModel.setRowCount(0);
+        ldsHistory.clear();
+        productComboBox.requestFocus();
+    }
+
+    private void showTabularDataView() {
+        JFrame tabularFrame = new JFrame("LDS Tabular Data View");
+        tabularFrame.setSize(800, 600);
+        tabularFrame.setLocationRelativeTo(this);
+
+        JTextArea textArea = new JTextArea();
+        textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        textArea.setText(getLDSTabularData());
+        textArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(textArea);
+
+        tabularFrame.add(scrollPane);
+        tabularFrame.setVisible(true);
+    }
+
+    private String getLDSTabularData() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("LDS DATA - TABULAR FORMAT\n");
+        sb.append("=".repeat(120)).append("\n\n");
+
+        sb.append(String.format("%-10s %-10s %-30s %-8s %-10s %-10s %-15s %-30s\n",
+                "LDSID", "ItemID", "Product Name", "Qty", "Date", "Type", "Employee", "Remarks"));
+        sb.append("-".repeat(120)).append("\n");
+
+        for (int i = 0; i < historyModel.getRowCount(); i++) {
+            sb.append(String.format("%-10s %-10s %-30s %-8s %-10s %-10s %-15s %-30s\n",
+                    historyModel.getValueAt(i, 0),
+                    historyModel.getValueAt(i, 1),
+                    historyModel.getValueAt(i, 2),
+                    historyModel.getValueAt(i, 3),
+                    historyModel.getValueAt(i, 4),
+                    historyModel.getValueAt(i, 5),
+                    historyModel.getValueAt(i, 6),
+                    historyModel.getValueAt(i, 7)));
+        }
+
+        sb.append("-".repeat(120)).append("\n");
+        sb.append(String.format("Total LDS Records: %d\n", historyModel.getRowCount()));
+
+        return sb.toString();
+    }
+
+    private void loadExistingData() {
+        loadLDSHistoryFromFile();
+    }
+
+    private void loadLDSHistoryFromFile() {
+        historyModel.setRowCount(0);
+
+        try (BufferedReader reader = new BufferedReader(new FileReader("LosDamStol.txt"))) {
+            String line;
+            String ldsId = null, itemId = null, productName = null, quantity = null,
+                    date = null, type = null, employee = null, remarks = null;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("LDSID: ")) {
+                    ldsId = line.substring(7);
+                    // Ensure this LDS ID has a color
+                    if (!ldsIdColors.containsKey(ldsId)) {
+                        ldsIdColors.put(ldsId, generatePastelColor());
+                    }
+                } else if (line.startsWith("ItemID: ")) {
+                    itemId = line.substring(8);
+                } else if (line.startsWith("ProductName: ")) {
+                    productName = line.substring(12);
+                } else if (line.startsWith("Quantity: ")) {
+                    quantity = line.substring(10);
+                } else if (line.startsWith("Date: ")) {
+                    date = line.substring(6);
+                } else if (line.startsWith("Type: ")) {
+                    type = line.substring(6);
+                } else if (line.startsWith("Employee: ")) {
+                    employee = line.substring(10);
+                } else if (line.startsWith("Remarks: ")) {
+                    remarks = line.substring(9);
+                } else if (line.trim().isEmpty()) {
+                    if (ldsId != null && itemId != null) {
+                        historyModel.addRow(new Object[]{
+                                ldsId,
+                                itemId,
+                                productName,
+                                quantity,
+                                date,
+                                type,
+                                employee,
+                                remarks
+                        });
+                    }
+                    ldsId = itemId = productName = quantity = date = type = employee = remarks = null;
+                }
+            }
+
+            if (ldsId != null && itemId != null) {
+                historyModel.addRow(new Object[]{
+                        ldsId,
+                        itemId,
+                        productName,
+                        quantity,
+                        date,
+                        type,
+                        employee,
+                        remarks
+                });
+            }
+
+        } catch (IOException e) {
+            System.out.println("LDS file not found or error reading: " + e.getMessage());
+        }
+    }
+
+
+
+}
