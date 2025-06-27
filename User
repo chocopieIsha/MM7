@@ -1,0 +1,36 @@
+// User.java
+public class User {
+    private String username;  // Changed from userID to username for clarity
+    private String fullName;
+    private String role; // "Admin" or "Sales Clerk"
+    private String dateCreated;
+    private String lastLogin;
+    private String status; // "Active" or "Inactive"
+    private String password;
+
+    public User(String username, String fullName, String role, String dateCreated,
+                String lastLogin, String status, String password) {
+        this.username = username;
+        this.fullName = fullName;
+        this.role = role;
+        this.dateCreated = dateCreated;
+        this.lastLogin = lastLogin;
+        this.status = status;
+        this.password = password;
+    }
+
+    // Getters and setters
+    public String getUsername() { return username; }
+    public String getFullName() { return fullName; }
+    public String getRole() { return role; }
+    public String getDateCreated() { return dateCreated; }
+    public String getLastLogin() { return lastLogin; }
+    public String getStatus() { return status; }
+    public String getPassword() { return password; }
+
+    public void setFullName(String fullName) { this.fullName = fullName; }
+    public void setRole(String role) { this.role = role; }
+    public void setLastLogin(String lastLogin) { this.lastLogin = lastLogin; }
+    public void setStatus(String status) { this.status = status; }
+    public void setPassword(String password) { this.password = password; }
+}
