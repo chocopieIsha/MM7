@@ -1,0 +1,693 @@
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.Random;
+import java.util.Vector;
+
+
+public class MacrinaSystem extends JFrame implements ActionListener, MouseListener {
+    // Color scheme - Brown/Cream theme
+    private static final Color CREAM_LIGHT = new Color(250, 248, 240);
+    private static final Color CREAM = new Color(245, 238, 220);
+    private static final Color BROWN_LIGHT = new Color(210, 180, 140);
+    private static final Color BROWN_MEDIUM = new Color(160, 120, 90);
+    private static final Color BROWN_DARK = new Color(101, 67, 33);
+    private static final Color ACCENT_GOLD = new Color(218, 165, 32);
+    private static final Color TEXT_DARK = new Color(62, 39, 35);
+
+    JLabel lblProductName, lblCategory, lblSize, lblColor, lblPrice, lblQuantity, lblSearch;
+    JTextField txtProductName, txtPrice, txtQuantity, txtSearch;
+    JComboBox<String> cboCategory, cboSize, cboColor;
+    JButton btnAdd, btnClear, btnEdit, btnDelete, btnClose, btnSearch, btnRefresh;
+    JCheckBox chkActive;
+    JTable tblInventory;
+    DefaultTableModel inventoryModel;
+    private String currentUser;
+    JPanel panelInfo, panelButtons, panelSearch, panelTable;
+    Database db = new Database("inventory.txt");
+
+    public Database getDatabase() {
+        return db;
+    }
+
+    public void refreshInventoryTable() {
+        db.displayRecord(inventoryModel);
+        tblInventory.revalidate();
+        tblInventory.repaint();
+    }
+
+    public MacrinaSystem(String username) {
+        this(username, new Database("inventory.txt"));
+    }
+
+    public MacrinaSystem() {
+        this("admin");
+    }
+
+    public MacrinaSystem(String username, Database database) {
+        UserManager userManager = new UserManager();
+        User user = userManager.getUser(username);
+
+        if (user != null && "Sales Clerk".equals(user.getRole())) {
+            JOptionPane.showMessageDialog(null,
+                    "Access Denied: Sales Clerks cannot access the Inventory System",
+                    "Permission Denied", JOptionPane.ERROR_MESSAGE);
+            dispose();
+            return;
+        }
+
+        this.currentUser = username;
+        this.db = database;
+        setupLookAndFeel();
+        createUI();
+        db.displayRecord(inventoryModel);
+        tblInventory.revalidate();
+        tblInventory.repaint();
+        checkUserPermissions();
+    }
+
+    private void setupLookAndFeel() {
+        try {
+            // Set system look and feel
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (ClassNotFoundException | InstantiationException |
+                 IllegalAccessException | UnsupportedLookAndFeelException e) {
+            // If system L&F fails, use default
+            try {
+                UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+            } catch (Exception ex) {
+                // Use default if all else fails
+                System.err.println("Could not set look and feel: " + ex.getMessage());
+            }
+        }
+
+        // Customize UI colors after setting L&F
+        UIManager.put("Panel.background", CREAM_LIGHT);
+        UIManager.put("Button.background", BROWN_MEDIUM);
+        UIManager.put("Button.foreground", Color.WHITE);
+        UIManager.put("TextField.background", Color.WHITE);
+        UIManager.put("ComboBox.background", Color.WHITE);
+        UIManager.put("Table.background", Color.WHITE);
+        UIManager.put("Table.alternateRowColor", CREAM);
+        UIManager.put("TableHeader.background", BROWN_DARK);
+        UIManager.put("TableHeader.foreground", Color.WHITE);
+    }
+
+    private void checkUserPermissions() {
+        UserManager userManager = new UserManager();
+        User user = userManager.getUser(currentUser);
+
+        if (user != null && "Sales Clerk".equals(user.getRole())) {
+            btnAdd.setEnabled(false);
+            btnEdit.setEnabled(false);
+            btnDelete.setEnabled(false);
+        }
+    }
+
+    private String generateProductID() {
+        return "PID" + (10000 + new Random().nextInt(90000));
+    }
+
+    private JButton createStyledButton(String text, Color bgColor, Color textColor) {
+        JButton button = new JButton(text);
+        button.setBackground(bgColor);
+        button.setForeground(textColor);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createRaisedBevelBorder(),
+                BorderFactory.createEmptyBorder(8, 15, 8, 15)
+        ));
+        button.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        // Add hover effect
+        button.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent evt) {
+                button.setBackground(bgColor.brighter());
+            }
+            public void mouseExited(MouseEvent evt) {
+                button.setBackground(bgColor);
+            }
+        });
+
+        return button;
+    }
+
+    private void createUI() {
+        setTitle("MacrinaMelecio's Clothing & Shoe Inventory System");
+        setLayout(new BorderLayout(15, 15));
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(CREAM_LIGHT);
+
+        // Create header panel
+        JPanel headerPanel = createHeaderPanel();
+
+        panelInfo = createInfoPanel();
+        panelSearch = createSearchPanel();
+        panelButtons = createButtonPanel();
+        panelTable = createTablePanel();
+
+        JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
+        bottomPanel.setBackground(CREAM_LIGHT);
+        bottomPanel.add(panelSearch, BorderLayout.NORTH);
+        bottomPanel.add(panelButtons, BorderLayout.SOUTH);
+
+        add(headerPanel, BorderLayout.NORTH);
+        add(panelInfo, BorderLayout.WEST);
+        add(panelTable, BorderLayout.CENTER);
+        add(bottomPanel, BorderLayout.SOUTH);
+
+        pack();
+        setSize(1200, 750);
+        setLocationRelativeTo(null);
+        setVisible(true);
+    }
+
+    private JPanel createHeaderPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BROWN_DARK);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
+
+        JLabel titleLabel = new JLabel("MacrinaMelecio's Inventory Management", JLabel.CENTER);
+        titleLabel.setFont(new Font("Serif", Font.BOLD, 28));
+        titleLabel.setForeground(CREAM_LIGHT);
+
+        JLabel subtitleLabel = new JLabel("Clothing Inventory System", JLabel.CENTER);
+        subtitleLabel.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+        subtitleLabel.setForeground(BROWN_LIGHT);
+
+        JLabel userLabel = new JLabel("User: " + currentUser, JLabel.RIGHT);
+        userLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        userLabel.setForeground(CREAM);
+
+        JPanel titlePanel = new JPanel(new BorderLayout());
+        titlePanel.setBackground(BROWN_DARK);
+        titlePanel.add(titleLabel, BorderLayout.CENTER);
+        titlePanel.add(subtitleLabel, BorderLayout.SOUTH);
+
+        panel.add(titlePanel, BorderLayout.CENTER);
+        panel.add(userLabel, BorderLayout.EAST);
+
+        return panel;
+    }
+
+    private JPanel createInfoPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(BROWN_MEDIUM, 2),
+                        "Product Information",
+                        0, 0,
+                        new Font("Segoe UI", Font.BOLD, 14),
+                        BROWN_DARK
+                ),
+                BorderFactory.createEmptyBorder(15, 15, 15, 15)
+        ));
+        panel.setBackground(CREAM);
+        panel.setPreferredSize(new Dimension(350, 400));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 5, 8, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        // Create styled labels
+        Font labelFont = new Font("Segoe UI", Font.BOLD, 12);
+        Color labelColor = TEXT_DARK;
+
+        lblProductName = createStyledLabel("Product Name:", labelFont, labelColor);
+        lblCategory = createStyledLabel("Category:", labelFont, labelColor);
+        lblSize = createStyledLabel("Size:", labelFont, labelColor);
+        lblColor = createStyledLabel("Color:", labelFont, labelColor);
+        lblPrice = createStyledLabel("Price (₱):", labelFont, labelColor);
+        lblQuantity = createStyledLabel("Quantity:", labelFont, labelColor);
+
+        // Create styled input components
+        txtProductName = createStyledTextField();
+        txtPrice = createStyledTextField();
+        txtQuantity = createStyledTextField();
+        txtQuantity.setText("0");
+        txtQuantity.setEditable(false);
+        txtQuantity.setBackground(CREAM_LIGHT);
+
+        chkActive = new JCheckBox("Active");
+        chkActive.setSelected(true);
+        chkActive.setBackground(CREAM);
+        chkActive.setForeground(TEXT_DARK);
+        chkActive.setFont(labelFont);
+
+        cboCategory = createStyledComboBox(new String[]{
+                "Men's Clothing", "Women's Clothing", "Kids' Clothing",
+        });
+
+        cboSize = createStyledComboBox(new String[]{
+                "XS", "S", "M", "L", "XL", "XXL",
+        });
+
+        cboColor = createStyledComboBox(new String[]{
+                "Black", "White", "Red", "Blue", "Green",
+                "Yellow", "Gray", "Pink", "Brown", "Beige",
+                "Multicolor", "Denim", "Other"
+        });
+
+        // Add components to panel
+        gbc.gridx = 0; gbc.gridy = 0; panel.add(lblProductName, gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        panel.add(txtProductName, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(lblCategory, gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        panel.add(cboCategory, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(lblSize, gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        panel.add(cboSize, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(lblColor, gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        panel.add(cboColor, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(lblPrice, gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        panel.add(txtPrice, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        panel.add(lblQuantity, gbc);
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        panel.add(txtQuantity, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE;
+        panel.add(chkActive, gbc);
+
+        return panel;
+    }
+
+    private JLabel createStyledLabel(String text, Font font, Color color) {
+        JLabel label = new JLabel(text);
+        label.setFont(font);
+        label.setForeground(color);
+        return label;
+    }
+
+    private JTextField createStyledTextField() {
+        JTextField textField = new JTextField();
+        textField.setPreferredSize(new Dimension(200, 30));
+        textField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BROWN_LIGHT, 1),
+                BorderFactory.createEmptyBorder(5, 8, 5, 8)
+        ));
+        textField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        return textField;
+    }
+
+    private JComboBox<String> createStyledComboBox(String[] items) {
+        JComboBox<String> comboBox = new JComboBox<>(items);
+        comboBox.setPreferredSize(new Dimension(200, 30));
+        comboBox.setBackground(Color.WHITE);
+        comboBox.setBorder(BorderFactory.createLineBorder(BROWN_LIGHT, 1));
+        comboBox.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        return comboBox;
+    }
+
+    private JPanel createSearchPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(BROWN_MEDIUM, 1),
+                        "Search & Filter",
+                        0, 0,
+                        new Font("Segoe UI", Font.BOLD, 12),
+                        BROWN_DARK
+                ),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        ));
+        panel.setBackground(CREAM);
+
+        lblSearch = new JLabel("Search Product:");
+        lblSearch.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lblSearch.setForeground(TEXT_DARK);
+
+        txtSearch = createStyledTextField();
+        txtSearch.setPreferredSize(new Dimension(250, 30));
+
+        btnSearch = createStyledButton("Search", BROWN_MEDIUM, Color.BLACK);
+        btnRefresh = createStyledButton("Refresh", ACCENT_GOLD, TEXT_DARK);
+
+        btnSearch.addActionListener(e -> searchInventory());
+        btnRefresh.addActionListener(e -> refreshTableData());
+
+        panel.add(lblSearch);
+        panel.add(txtSearch);
+        panel.add(btnSearch);
+        panel.add(btnRefresh);
+
+        return panel;
+    }
+
+    private JPanel createButtonPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 15));
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        panel.setBackground(CREAM_LIGHT);
+
+        btnAdd = createStyledButton("Add Product", new Color(46, 125, 50), Color.BLACK);
+        btnClear = createStyledButton("Clear Form", BROWN_LIGHT, TEXT_DARK);
+        btnEdit = createStyledButton("Edit Product", new Color(255, 152, 0), Color.BLACK);
+        btnDelete = createStyledButton("Delete Product", new Color(211, 47, 47), Color.BLACK);
+        btnClose = createStyledButton("Close System", new Color(97, 97, 97), Color.BLACK);
+
+        btnAdd.addActionListener(this);
+        btnClear.addActionListener(this);
+        btnEdit.addActionListener(this);
+        btnDelete.addActionListener(this);
+        btnClose.addActionListener(this);
+
+        panel.add(btnAdd);
+        panel.add(btnClear);
+        panel.add(btnEdit);
+        panel.add(btnDelete);
+        panel.add(btnClose);
+
+        return panel;
+    }
+
+    private JPanel createTablePanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(BROWN_MEDIUM, 2),
+                        "Inventory Records",
+                        0, 0,
+                        new Font("Segoe UI", Font.BOLD, 14),
+                        BROWN_DARK
+                ),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        ));
+        panel.setBackground(CREAM_LIGHT);
+
+        createInventoryTable();
+
+        JScrollPane scrollPane = new JScrollPane(tblInventory);
+        scrollPane.setBorder(BorderFactory.createLineBorder(BROWN_LIGHT, 1));
+        scrollPane.getViewport().setBackground(Color.WHITE);
+
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private void createInventoryTable() {
+        String[] columnNames = {
+                "Product ID", "Product Name", "Category", "Size", "Color",
+                "Price (₱)", "Quantity", "Status"
+        };
+        inventoryModel = new DefaultTableModel(columnNames, 0) {
+            @Override public boolean isCellEditable(int row, int column) {
+                return column == 7;
+            }
+            @Override public Class<?> getColumnClass(int columnIndex) {
+                return columnIndex == 7 ? Boolean.class : String.class;
+            }
+        };
+
+        tblInventory = new JTable(inventoryModel);
+        tblInventory.setRowHeight(30);
+        tblInventory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tblInventory.addMouseListener(this);
+        tblInventory.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        tblInventory.setGridColor(BROWN_LIGHT);
+        tblInventory.setSelectionBackground(BROWN_LIGHT);
+        tblInventory.setSelectionForeground(TEXT_DARK);
+
+        // Style table header
+        JTableHeader header = tblInventory.getTableHeader();
+        header.setBackground(new Color(45, 25, 10)); // Very dark brown
+        header.setForeground(new Color(80, 40, 20));
+        header.setFont(new Font("Segoe UI", Font.BOLD, 13)); // Bold & readable
+        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 35));
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 2, 0, new Color(80, 40, 20)));
+
+
+
+        // Alternate row colors
+        tblInventory.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                                                           boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (!isSelected) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : CREAM);
+                }
+                return c;
+            }
+        });
+
+        // Set column widths
+        tblInventory.getColumnModel().getColumn(0).setPreferredWidth(80);  // Product ID
+        tblInventory.getColumnModel().getColumn(1).setPreferredWidth(150); // Product Name
+        tblInventory.getColumnModel().getColumn(2).setPreferredWidth(120); // Category
+        tblInventory.getColumnModel().getColumn(3).setPreferredWidth(60);  // Size
+        tblInventory.getColumnModel().getColumn(4).setPreferredWidth(80);  // Color
+        tblInventory.getColumnModel().getColumn(5).setPreferredWidth(80);  // Price
+        tblInventory.getColumnModel().getColumn(6).setPreferredWidth(70);  // Quantity
+        tblInventory.getColumnModel().getColumn(7).setPreferredWidth(70);  // Status
+
+        db.displayRecord(inventoryModel);
+    }
+
+    private void refreshTableData() {
+        txtSearch.setText("");  // Clear search field
+        db.displayRecord(inventoryModel);  // Reload original data
+        tblInventory.setModel(inventoryModel);
+        tblInventory.revalidate();
+        tblInventory.repaint();
+        JOptionPane.showMessageDialog(this, "Table refreshed successfully!",
+                "Refresh Complete", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void searchInventory() {
+        String searchText = txtSearch.getText().trim().toLowerCase();
+        if (searchText.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter search text",
+                    "Search Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        Vector<String> columnNames = new Vector<>();
+        for (int i = 0; i < inventoryModel.getColumnCount(); i++) {
+            columnNames.add(inventoryModel.getColumnName(i));
+        }
+        DefaultTableModel tempModel = new DefaultTableModel(columnNames, 0);
+
+        int matchCount = 0;
+        for (int i = 0; i < inventoryModel.getRowCount(); i++) {
+            for (int j = 0; j < inventoryModel.getColumnCount(); j++) {
+                Object value = inventoryModel.getValueAt(i, j);
+                if (value != null && value.toString().toLowerCase().contains(searchText)) {
+                    Vector<Object> row = new Vector<>();
+                    for (int k = 0; k < inventoryModel.getColumnCount(); k++) {
+                        row.add(inventoryModel.getValueAt(i, k));
+                    }
+                    tempModel.addRow(row);
+                    matchCount++;
+                    break;
+                }
+            }
+        }
+
+        tblInventory.setModel(tempModel);
+        tblInventory.revalidate();
+        tblInventory.repaint();
+
+        JOptionPane.showMessageDialog(this, matchCount + " product(s) found matching '" + searchText + "'",
+                "Search Results", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        Object source = e.getSource();
+        if (source == btnAdd) addProduct();
+        else if (source == btnClear) clearFields();
+        else if (source == btnEdit) editProduct();
+        else if (source == btnDelete) deleteProduct();
+        else if (source == btnClose) {
+            saveInventory();
+            dispose();
+        }
+    }
+
+    private void addProduct() {
+        if (txtProductName.getText().trim().isEmpty() || txtPrice.getText().trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please fill all required fields", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            Double.parseDouble(txtPrice.getText());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Price must be a number", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        Object[] productData = {
+                generateProductID(),
+                txtProductName.getText(),
+                cboCategory.getSelectedItem().toString(),
+                cboSize.getSelectedItem().toString(),
+                cboColor.getSelectedItem().toString(),
+                txtPrice.getText(),
+                "0",
+                chkActive.isSelected()
+        };
+
+        inventoryModel.addRow(productData);
+        saveInventory();
+
+        // Update CSV - now with proper error handling
+        try {
+            CSVManager.updateProduct(txtProductName.getText(), 0);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "Error updating product in CSV: " + e.getMessage(),
+                    "CSV Error", JOptionPane.WARNING_MESSAGE);
+        }
+
+        refreshDashboardStats();
+        clearFields();
+        JOptionPane.showMessageDialog(this, "Product added successfully!",
+                "Success", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void editProduct() {
+        int selectedRow = tblInventory.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a product to edit", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (txtProductName.getText().trim().isEmpty() || txtPrice.getText().trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please fill all required fields", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            Double.parseDouble(txtPrice.getText());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Price must be a number", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String oldName = inventoryModel.getValueAt(selectedRow, 1).toString();
+        String newName = txtProductName.getText();
+
+        // Get current quantity before editing
+        int currentQuantity = Integer.parseInt(inventoryModel.getValueAt(selectedRow, 6).toString());
+
+        // Update the table model
+        inventoryModel.setValueAt(newName, selectedRow, 1);
+        inventoryModel.setValueAt(cboCategory.getSelectedItem().toString(), selectedRow, 2);
+        inventoryModel.setValueAt(cboSize.getSelectedItem().toString(), selectedRow, 3);
+        inventoryModel.setValueAt(cboColor.getSelectedItem().toString(), selectedRow, 4);
+        inventoryModel.setValueAt(txtPrice.getText(), selectedRow, 5);
+        inventoryModel.setValueAt(chkActive.isSelected(), selectedRow, 7);
+
+        saveInventory();
+
+        // Update CSV - handle both name change and quantity update
+        if (!oldName.equals(newName)) {
+            // Remove old entry and add new one
+            CSVManager.removeProduct(oldName);
+            CSVManager.updateProduct(newName, currentQuantity);
+        } else {
+            // Just update the existing product
+            CSVManager.updateProduct(newName, currentQuantity);
+        }
+
+        refreshDashboardStats();
+        clearFields();
+        JOptionPane.showMessageDialog(this, "Product edited successfully!",
+                "Success", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void deleteProduct() {
+        int selectedRow = tblInventory.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a product to delete", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "Are you sure you want to delete this product?",
+                "Confirm Delete", JOptionPane.YES_NO_OPTION);
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            String productName = inventoryModel.getValueAt(selectedRow, 1).toString();
+            inventoryModel.removeRow(selectedRow);
+            saveInventory();
+
+            // Remove from CSV - now completely remove the product entry
+            CSVManager.removeProduct(productName); // Add this new method to CSVManager
+            refreshDashboardStats();
+
+            clearFields();
+            JOptionPane.showMessageDialog(this, "Product deleted successfully!",
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private void clearFields() {
+        txtProductName.setText("");
+        txtPrice.setText("");
+        txtQuantity.setText("0");
+        cboCategory.setSelectedIndex(0);
+        cboSize.setSelectedIndex(0);
+        cboColor.setSelectedIndex(0);
+        chkActive.setSelected(true);
+        tblInventory.clearSelection();
+    }
+
+    private void refreshDashboardStats() {
+        // Find existing dashboard instance
+        for (Frame frame : JFrame.getFrames()) {
+            if (frame instanceof Dashboard) {
+                Dashboard dashboard = (Dashboard) frame;
+                dashboard.refreshStats();
+                break;
+            }
+        }
+    }
+
+    private void saveInventory() {
+        db.saveRecord(inventoryModel);
+    }
+
+    @Override
+    public void mouseClicked(MouseEvent e) {
+        if (e.getSource() == tblInventory) {
+            int selectedRow = tblInventory.getSelectedRow();
+            if (selectedRow >= 0) {
+                txtProductName.setText(inventoryModel.getValueAt(selectedRow, 1).toString());
+                cboCategory.setSelectedItem(inventoryModel.getValueAt(selectedRow, 2));
+                cboSize.setSelectedItem(inventoryModel.getValueAt(selectedRow, 3));
+                cboColor.setSelectedItem(inventoryModel.getValueAt(selectedRow, 4));
+                txtPrice.setText(inventoryModel.getValueAt(selectedRow, 5).toString());
+                txtQuantity.setText(inventoryModel.getValueAt(selectedRow, 6).toString());
+                chkActive.setSelected((Boolean)inventoryModel.getValueAt(selectedRow, 7));
+            }
+        }
+    }
+
+    @Override public void mousePressed(MouseEvent e) {}
+    @Override public void mouseReleased(MouseEvent e) {}
+    @Override public void mouseEntered(MouseEvent e) {}
+    @Override public void mouseExited(MouseEvent e) {}
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new MacrinaSystem());
+    }
+}
