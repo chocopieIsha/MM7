@@ -1,0 +1,1063 @@
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableCellRenderer;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class StockInUI extends JFrame {
+    private Database database;
+    private String currentUser;
+    private Map<String, String> supplierMap;
+    private Map<String, Color> supplyColorMap = new HashMap<>();
+    private Random random = new Random();
+
+    // Color Theme - Brown and Cream
+    private static final Color CREAM_WHITE = new Color(255, 253, 240);
+    private static final Color LIGHT_CREAM = new Color(245, 239, 220);
+    private static final Color MEDIUM_BROWN = new Color(139, 119, 101);
+    private static final Color DARK_BROWN = new Color(101, 67, 33);
+    private static final Color ACCENT_BROWN = new Color(160, 126, 84);
+    private static final Color SUPPLY_ID_COLOR = new Color(205, 133, 63);
+    private static final Color BUTTON_BROWN = new Color(139, 90, 43);
+    private static final Color HOVER_BROWN = new Color(160, 110, 65);
+
+    // UI Components
+    private JTextField supplyIdField, dateField, priceField, quantityField, employeeIdField, orNumberField;
+    private JComboBox<String> supplierComboBox, productIdComboBox, supplyIdComboBox;
+    private JTable itemTable, supplyTable, supplyDetailsTable;
+    private DefaultTableModel tableModel, supplyTableModel, supplyDetailsTableModel;
+    private List<String[]> supplyDetailsList = new ArrayList<>();
+
+    // File paths
+    private static final String SUPPLY_ID_PREFIX = "SID-";
+    private static final int SUPPLY_ID_LENGTH = 6;
+    private String currentSupplyId;
+
+    private static final String SUPPLIERS_FILE = "suppliers.txt";
+    private static final String SUPPLY_FILE = "Supply.txt";
+    private static final String SUPPLIER_DETAILS_FILE = "SupplierDetails.txt";
+
+    public StockInUI(Database database, String currentUser) {
+        this.database = database;
+        this.currentUser = currentUser;
+        this.supplierMap = loadSuppliers();
+
+        this.currentSupplyId = getCurrentSupplyId();
+        initializeUI();
+        loadFileData();
+    }
+
+    private void initializeUI() {
+        setTitle("Stock In - Macrina Clothing Store");
+        setSize(1400, 900);
+        setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(CREAM_WHITE);
+
+        createMainPanel();
+        setVisible(true);
+    }
+
+    private void createMainPanel() {
+        JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
+        mainPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        mainPanel.setBackground(CREAM_WHITE);
+        setContentPane(mainPanel);
+
+        // Title Panel
+        mainPanel.add(createTitlePanel(), BorderLayout.NORTH);
+
+        // Main content panel
+        JPanel contentPanel = new JPanel(new BorderLayout(6, 6));
+        contentPanel.setBackground(CREAM_WHITE);
+
+        // Add form panel
+        contentPanel.add(createFormPanel(), BorderLayout.NORTH);
+
+        // Add middle panel with current items table
+        contentPanel.add(createMiddlePanel(), BorderLayout.CENTER);
+
+        // Add bottom section with tables and buttons
+        contentPanel.add(createBottomSection(), BorderLayout.SOUTH);
+
+        mainPanel.add(contentPanel, BorderLayout.CENTER);
+    }
+
+    private JPanel createTitlePanel() {
+        JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        titlePanel.setBackground(CREAM_WHITE);
+        JLabel titleLabel = new JLabel("STOCK IN MANAGEMENT");
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        titleLabel.setForeground(new Color(45, 25, 10));
+        titlePanel.add(titleLabel);
+        return titlePanel;
+    }
+
+    private JPanel createFormPanel() {
+        JPanel formContainerPanel = new JPanel(new BorderLayout());
+        formContainerPanel.setBackground(CREAM_WHITE);
+        formContainerPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 2),
+                "Transaction Details",
+                TitledBorder.LEFT,
+                TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 14),
+                DARK_BROWN
+        ));
+
+        JPanel formPanel = new JPanel(new GridLayout(1, 2, 30, 0));
+        formPanel.setBackground(CREAM_WHITE);
+        formPanel.setBorder(new EmptyBorder(10, 15, 10, 15));
+
+        // Left Form Panel (Transaction Info)
+        formPanel.add(createLeftFormPanel());
+
+        // Right Form Panel (Product Info)
+        formPanel.add(createRightFormPanel());
+
+        formContainerPanel.add(formPanel);
+        return formContainerPanel;
+    }
+
+    private JPanel createLeftFormPanel() {
+        JPanel leftFormPanel = new JPanel(new GridBagLayout());
+        leftFormPanel.setBackground(CREAM_WHITE);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 8, 5, 8);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Generate a new supply ID
+        String newSupplyId = generateNewSupplyId();
+
+        // Create editable combo box for suppliers
+        supplierComboBox = createEditableSupplierComboBox();
+        dateField = createStyledTextField(new SimpleDateFormat("MM-dd-yy").format(new Date()), true);
+        orNumberField = createStyledTextField("", true); // Now editable
+        employeeIdField = createStyledTextField(currentUser, false);
+        supplyIdField = createStyledTextField(newSupplyId, false);
+
+        // Add components to left form
+        gbc.gridx = 0; gbc.gridy = 0;
+        leftFormPanel.add(createStyledLabel("Supply ID:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        leftFormPanel.add(supplyIdField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1;
+        leftFormPanel.add(createStyledLabel("Supplier:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        leftFormPanel.add(supplierComboBox, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2;
+        leftFormPanel.add(createStyledLabel("Date (MM-DD-YY):", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        leftFormPanel.add(dateField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3;
+        leftFormPanel.add(createStyledLabel("OR Number:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        leftFormPanel.add(orNumberField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 4;
+        leftFormPanel.add(createStyledLabel("Employee:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        leftFormPanel.add(employeeIdField, gbc);
+
+        return leftFormPanel;
+    }
+
+    private JPanel createRightFormPanel() {
+        JPanel rightFormPanel = new JPanel(new GridBagLayout());
+        rightFormPanel.setBackground(CREAM_WHITE);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 8, 5, 8);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Product combo box
+        Map<String, String> productMap = database.getProductsWithNames();
+        String[] productOptions = new String[productMap.size() + 1];
+        productOptions[0] = "Select Product";
+        int index = 1;
+        for (Map.Entry<String, String> entry : productMap.entrySet()) {
+            productOptions[index] = entry.getKey() + " - " + entry.getValue();
+            index++;
+        }
+        productIdComboBox = createStyledComboBox(productOptions);
+
+        priceField = createStyledTextField("", true);
+        quantityField = createStyledTextField("", true);
+        JButton addButton = createStyledButton("Add Item", BUTTON_BROWN, CREAM_WHITE);
+        addButton.setPreferredSize(new Dimension(120, 35));
+
+        // Add components to right form
+        gbc.gridx = 0; gbc.gridy = 0;
+        rightFormPanel.add(createStyledLabel("Product:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        rightFormPanel.add(productIdComboBox, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1;
+        rightFormPanel.add(createStyledLabel("Price:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        rightFormPanel.add(priceField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2;
+        rightFormPanel.add(createStyledLabel("Quantity:", DARK_BROWN, Font.BOLD), gbc);
+        gbc.gridx = 1;
+        rightFormPanel.add(quantityField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        rightFormPanel.add(addButton, gbc);
+
+        // Add action listener
+        addButton.addActionListener(e -> addToTable());
+
+        return rightFormPanel;
+    }
+
+    private JPanel createMiddlePanel() {
+        JPanel middlePanel = new JPanel(new BorderLayout());
+        middlePanel.setBackground(CREAM_WHITE);
+        middlePanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 2),
+                "CURRENT TRANSACTION ITEMS",
+                TitledBorder.LEFT,
+                TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 14),
+                DARK_BROWN
+        ));
+
+        tableModel = new DefaultTableModel(new String[]{"ProductID", "Supplier", "Price", "Quantity", "Subtotal", "Actions"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == 5;
+            }
+        };
+        itemTable = new JTable(tableModel);
+        styleTable(itemTable);
+
+        // Add edit button renderer and editor
+        itemTable.getColumn("Actions").setCellRenderer(new ButtonRenderer());
+        itemTable.getColumn("Actions").setCellEditor(new ButtonEditor(new JCheckBox()));
+
+        JScrollPane itemScrollPane = new JScrollPane(itemTable);
+        itemScrollPane.setPreferredSize(new Dimension(1300, 200));
+        itemScrollPane.getViewport().setBackground(CREAM_WHITE);
+        middlePanel.add(itemScrollPane, BorderLayout.CENTER);
+
+        return middlePanel;
+    }
+
+    private JPanel createBottomSection() {
+        JPanel bottomSection = new JPanel(new BorderLayout());
+        bottomSection.setBackground(CREAM_WHITE);
+
+        // Bottom Tables Panel
+        JPanel bottomTablesPanel = new JPanel(new GridLayout(1, 2, 15, 0));
+        bottomTablesPanel.setBackground(CREAM_WHITE);
+
+        // Add supply panel
+        bottomTablesPanel.add(createSupplyPanel());
+
+        // Add supplier details panel
+        bottomTablesPanel.add(createSupplierDetailsPanel());
+
+        // Button Panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
+        buttonPanel.setBackground(CREAM_WHITE);
+
+        JButton viewDataButton = createStyledButton("View Tabular Data", ACCENT_BROWN, CREAM_WHITE);
+        JButton confirmButton = createStyledButton("Confirm", new Color(46, 125, 50), CREAM_WHITE);
+        JButton cancelButton = createStyledButton("Cancel", new Color(211, 47, 47), CREAM_WHITE);
+
+        viewDataButton.setPreferredSize(new Dimension(150, 40));
+        confirmButton.setPreferredSize(new Dimension(120, 40));
+        cancelButton.setPreferredSize(new Dimension(120, 40));
+
+        viewDataButton.addActionListener(e -> showTabularDataView());
+        confirmButton.addActionListener(e -> confirmStockIn());
+        cancelButton.addActionListener(e -> dispose());
+
+        buttonPanel.add(viewDataButton);
+        buttonPanel.add(confirmButton);
+        buttonPanel.add(cancelButton);
+
+        bottomSection.add(bottomTablesPanel, BorderLayout.CENTER);
+        bottomSection.add(buttonPanel, BorderLayout.SOUTH);
+
+        return bottomSection;
+    }
+
+    private JPanel createSupplyPanel() {
+        JPanel supplyPanel = new JPanel(new BorderLayout(5, 5));
+        supplyPanel.setBackground(CREAM_WHITE);
+        supplyPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 2),
+                "SUPPLY RECORDS",
+                TitledBorder.LEFT,
+                TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 14),
+                DARK_BROWN
+        ));
+
+        supplyTableModel = new DefaultTableModel(new String[]{"SupplyID", "DateOfPurchase", "Supplier", "OR Number", "Total", "Employee"}, 0);
+        supplyTable = new JTable(supplyTableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    String supplyId = getValueAt(row, 0).toString();
+                    Color color = supplyColorMap.getOrDefault(supplyId, CREAM_WHITE);
+                    c.setBackground(blendColors(CREAM_WHITE, color, 0.3f));
+                }
+                return c;
+            }
+        };
+        styleTable(supplyTable);
+        supplyTable.getColumn("SupplyID").setCellRenderer(new SupplyIDRenderer());
+
+        JScrollPane supplyScrollPane = new JScrollPane(supplyTable);
+        supplyScrollPane.setPreferredSize(new Dimension(650, 180));
+        supplyScrollPane.getViewport().setBackground(CREAM_WHITE);
+        supplyPanel.add(supplyScrollPane, BorderLayout.CENTER);
+
+        return supplyPanel;
+    }
+
+    private JPanel createSupplierDetailsPanel() {
+        JPanel supplierDetailsPanel = new JPanel(new BorderLayout(5, 5));
+        supplierDetailsPanel.setBackground(CREAM_WHITE);
+        supplierDetailsPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 2),
+                "SUPPLIER DETAILS",
+                TitledBorder.LEFT,
+                TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 14),
+                DARK_BROWN
+        ));
+
+        supplyDetailsTableModel = new DefaultTableModel(new String[]{"SupplyID", "ProductID", "Price", "Quantity", "Subtotal"}, 0);
+        supplyDetailsTable = new JTable(supplyDetailsTableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    String supplyId = getValueAt(row, 0).toString();
+                    Color color = supplyColorMap.getOrDefault(supplyId, CREAM_WHITE);
+                    c.setBackground(blendColors(CREAM_WHITE, color, 0.3f));
+                }
+                return c;
+            }
+        };
+        styleTable(supplyDetailsTable);
+        supplyDetailsTable.getColumn("SupplyID").setCellRenderer(new SupplyIDRenderer());
+
+        JScrollPane detailsScrollPane = new JScrollPane(supplyDetailsTable);
+        detailsScrollPane.setPreferredSize(new Dimension(650, 180));
+        detailsScrollPane.getViewport().setBackground(CREAM_WHITE);
+        supplierDetailsPanel.add(detailsScrollPane, BorderLayout.CENTER);
+
+        return supplierDetailsPanel;
+    }
+
+    // Supplier Management Methods
+    private Map<String, String> loadSuppliers() {
+        Map<String, String> suppliers = new LinkedHashMap<>();
+        File file = new File(SUPPLIERS_FILE);
+
+        if (!file.exists()) {
+            // Create default suppliers if file doesn't exist
+            suppliers.put("SID101 - NCCC", "SID101");
+            suppliers.put("SID102 - Gaisano", "SID102");
+            suppliers.put("SID103 - SM", "SID103");
+            saveSuppliers(suppliers);
+            return suppliers;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.trim().isEmpty()) {
+                    String[] parts = line.split(" - ");
+                    if (parts.length == 2) {
+                        suppliers.put(line, parts[0]);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error loading suppliers: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+        return suppliers;
+    }
+
+    private void saveSuppliers(Map<String, String> suppliers) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(SUPPLIERS_FILE))) {
+            for (String key : suppliers.keySet()) {
+                writer.write(key);
+                writer.newLine();
+            }
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error saving suppliers: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private JComboBox<String> createEditableSupplierComboBox() {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("Select Supplier");
+        supplierMap.keySet().forEach(model::addElement);
+
+        JComboBox<String> comboBox = new JComboBox<>(model);
+        comboBox.setEditable(true);
+        comboBox.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        comboBox.setBackground(CREAM_WHITE);
+        comboBox.setBorder(BorderFactory.createLineBorder(MEDIUM_BROWN, 1));
+        comboBox.setPreferredSize(new Dimension(180, 35));
+
+        comboBox.addActionListener(e -> {
+            if (comboBox.isPopupVisible()) return;
+
+            Object selected = comboBox.getSelectedItem();
+            if (selected == null) return;
+
+            String selectedStr = selected.toString();
+            if (!supplierMap.containsKey(selectedStr) && !selectedStr.equals("Select Supplier")) {
+                // New supplier entered - only prompt if it's not an existing supplier
+                int option = JOptionPane.showConfirmDialog(this,
+                        "Add new supplier '" + selectedStr + "'?",
+                        "New Supplier", JOptionPane.YES_NO_OPTION);
+
+                if (option == JOptionPane.YES_OPTION) {
+                    // Generate new supplier ID
+                    String newId = "SID" + (supplierMap.size() + 101);
+                    String newEntry = newId + " - " + selectedStr;
+
+                    // Add to map and save
+                    supplierMap.put(newEntry, newId);
+                    saveSuppliers(supplierMap);
+
+                    // Update combo box
+                    comboBox.removeItemAt(0); // Remove "Select Supplier"
+                    comboBox.addItem(newEntry);
+                    comboBox.setSelectedItem(newEntry);
+                } else {
+                    comboBox.setSelectedIndex(0);
+                }
+            }
+        });
+
+        return comboBox;
+    }
+
+
+    private String getCurrentSupplyId() {
+        int maxId = 0;
+
+        // Check if supply file exists
+        if (new File(SUPPLY_FILE).exists()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(SUPPLY_FILE))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("SupplyID: " + SUPPLY_ID_PREFIX)) {
+                        String idStr = line.substring(("SupplyID: " + SUPPLY_ID_PREFIX).length()).trim();
+                        try {
+                            int idNum = Integer.parseInt(idStr);
+                            if (idNum > maxId) {
+                                maxId = idNum;
+                            }
+                        } catch (NumberFormatException e) {
+                            // Ignore malformed IDs
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("Error reading supply file: " + e.getMessage());
+            }
+        }
+
+        // Return the highest found ID (don't increment yet)
+        return SUPPLY_ID_PREFIX + String.format("%0" + SUPPLY_ID_LENGTH + "d", maxId);
+    }
+
+    private String generateNewSupplyId() {
+        // Get the numeric part of the current ID
+        int currentIdNum = 0;
+        if (currentSupplyId.startsWith(SUPPLY_ID_PREFIX)) {
+            try {
+                currentIdNum = Integer.parseInt(currentSupplyId.substring(SUPPLY_ID_PREFIX.length()));
+            } catch (NumberFormatException e) {
+                // If parsing fails, start from 1
+                currentIdNum = 0;
+            }
+        }
+
+        // Increment and format
+        int newIdNum = currentIdNum + 1;
+        return SUPPLY_ID_PREFIX + String.format("%0" + SUPPLY_ID_LENGTH + "d", newIdNum);
+    }
+
+
+
+    // UI Component Creation Methods
+    private JButton createStyledButton(String text, Color bgColor, Color textColor) {
+        JButton button = new JButton(text);
+        button.setBackground(bgColor);
+        button.setForeground(DARK_BROWN);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createRaisedSoftBevelBorder());
+        button.setPreferredSize(new Dimension(100, 35));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(HOVER_BROWN);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor);
+            }
+        });
+
+        return button;
+    }
+
+    private JTextField createStyledTextField(String text, boolean editable) {
+        JTextField field = new JTextField(text, 15);
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        field.setBackground(editable ? CREAM_WHITE : LIGHT_CREAM);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(8, 10, 8, 10)
+        ));
+        field.setEditable(editable);
+        field.setPreferredSize(new Dimension(180, 35));
+        return field;
+    }
+
+    private JComboBox<String> createStyledComboBox(String[] items) {
+        JComboBox<String> combo = new JComboBox<>(items);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        combo.setBackground(CREAM_WHITE);
+        combo.setBorder(BorderFactory.createLineBorder(MEDIUM_BROWN, 1));
+        combo.setPreferredSize(new Dimension(180, 35));
+        return combo;
+    }
+
+    private void styleTable(JTable table) {
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        table.setBackground(CREAM_WHITE);
+        table.setSelectionBackground(LIGHT_CREAM);
+        table.setSelectionForeground(DARK_BROWN);
+        table.setGridColor(MEDIUM_BROWN);
+        table.setRowHeight(28);
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
+        table.getTableHeader().setBackground(DARK_BROWN);
+        table.getTableHeader().setForeground(new Color(45, 25, 10));
+        table.getTableHeader().setPreferredSize(new Dimension(0, 35));
+        table.setFillsViewportHeight(true);
+    }
+
+    private JLabel createStyledLabel(String text, Color color, int style) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", style, 12));
+        label.setForeground(DARK_BROWN);
+        return label;
+    }
+
+    private Color generatePastelColor() {
+        float hue = random.nextFloat();
+        float saturation = 0.5f + random.nextFloat() * 0.3f;
+        float brightness = 0.8f + random.nextFloat() * 0.2f;
+        return Color.getHSBColor(hue, saturation, brightness);
+    }
+
+    private Color blendColors(Color bg, Color fg, float alpha) {
+        float[] bgComponents = bg.getRGBColorComponents(null);
+        float[] fgComponents = fg.getRGBColorComponents(null);
+
+        float r = bgComponents[0] * (1 - alpha) + fgComponents[0] * alpha;
+        float g = bgComponents[1] * (1 - alpha) + fgComponents[1] * alpha;
+        float b = bgComponents[2] * (1 - alpha) + fgComponents[2] * alpha;
+
+        return new Color(r, g, b);
+    }
+
+    // Table Action Classes
+    class ButtonRenderer extends JButton implements TableCellRenderer {
+        public ButtonRenderer() {
+            setOpaque(true);
+        }
+
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                       boolean isSelected, boolean hasFocus, int row, int column) {
+            setText("Edit");
+            setBackground(ACCENT_BROWN);
+            setForeground(new Color(45, 25, 10));
+            setFont(new Font("Segoe UI", Font.BOLD, 10));
+            return this;
+        }
+    }
+
+    class ButtonEditor extends DefaultCellEditor {
+        protected JButton button;
+        private String label;
+        private boolean isPushed;
+        private int selectedRow;
+
+        public ButtonEditor(JCheckBox checkBox) {
+            super(checkBox);
+            button = new JButton();
+            button.setOpaque(true);
+            button.addActionListener(new ActionListener() {
+                public void actionPerformed(ActionEvent e) {
+                    fireEditingStopped();
+                }
+            });
+        }
+
+        public Component getTableCellEditorComponent(JTable table, Object value,
+                                                     boolean isSelected, int row, int column) {
+            selectedRow = row;
+            label = "Edit";
+            button.setText(label);
+            button.setBackground(ACCENT_BROWN);
+            button.setForeground(new Color(45, 25, 10));
+            isPushed = true;
+            return button;
+        }
+
+        public Object getCellEditorValue() {
+            if (isPushed) {
+                editTableRow(selectedRow);
+            }
+            isPushed = false;
+            return label;
+        }
+
+        public boolean stopCellEditing() {
+            isPushed = false;
+            return super.stopCellEditing();
+        }
+
+        protected void fireEditingStopped() {
+            super.fireEditingStopped();
+        }
+    }
+
+    class SupplyIDRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                       boolean isSelected, boolean hasFocus, int row, int column) {
+            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+
+            if (value != null && (value.toString().startsWith("SUP-") || value.toString().startsWith("SID"))) {
+                String supplyId = value.toString();
+                Color color = supplyColorMap.getOrDefault(supplyId, SUPPLY_ID_COLOR);
+                setBackground(isSelected ? color.darker() : color);
+                setForeground(new Color(45, 25, 10));
+                setFont(getFont().deriveFont(Font.BOLD));
+            } else {
+                setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+                setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
+                setFont(getFont().deriveFont(Font.PLAIN));
+            }
+
+            return c;
+        }
+    }
+
+    // Business Logic Methods
+    private void addToTable() {
+        String selectedProduct = (String) productIdComboBox.getSelectedItem();
+        String selectedSupplier = (String) supplierComboBox.getSelectedItem();
+
+        if (selectedProduct == null || selectedProduct.equals("Select Product")) {
+            JOptionPane.showMessageDialog(this, "Please select a Product", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (selectedSupplier == null || selectedSupplier.equals("Select Supplier")) {
+            JOptionPane.showMessageDialog(this, "Please select a Supplier", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String productId = selectedProduct.split(" - ")[0];
+        String supplierName = selectedSupplier.split(" - ")[1];
+        String priceText = priceField.getText().trim();
+        String quantityText = quantityField.getText().trim();
+        String orNumber = orNumberField.getText().trim();
+        String supplyId = supplyIdField.getText().trim();
+
+        if (priceText.isEmpty() || quantityText.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter price and quantity", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            double price = Double.parseDouble(priceText);
+            int quantity = Integer.parseInt(quantityText);
+
+            if (price <= 0 || quantity <= 0) {
+                JOptionPane.showMessageDialog(this, "Price and quantity must be positive numbers", "Input Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            double subtotal = price * quantity;
+
+            tableModel.addRow(new Object[]{productId, supplierName, price, quantity, subtotal, "Edit"});
+            supplyDetailsList.add(new String[]{
+                    supplyId,
+                    productId,
+                    supplierName,
+                    priceText,
+                    quantityText,
+                    String.valueOf(subtotal),
+                    orNumber
+            });
+
+            priceField.setText("");
+            quantityField.setText("");
+            priceField.requestFocus();
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid price or quantity. Please enter valid numbers.", "Input Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void editTableRow(int row) {
+        if (row >= 0 && row < tableModel.getRowCount()) {
+            String productId = (String) tableModel.getValueAt(row, 0);
+            String supplier = (String) tableModel.getValueAt(row, 1);
+            String price = tableModel.getValueAt(row, 2).toString();
+            String quantity = tableModel.getValueAt(row, 3).toString();
+
+            JDialog editDialog = new JDialog(this, "Edit Item", true);
+            editDialog.setLayout(new GridBagLayout());
+            editDialog.getContentPane().setBackground(CREAM_WHITE);
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(10, 10, 10, 10);
+
+            JTextField editPriceField = createStyledTextField(price, true);
+            JTextField editQuantityField = createStyledTextField(quantity, true);
+
+            gbc.gridx = 0; gbc.gridy = 0;
+            editDialog.add(createStyledLabel("Product: " + productId, DARK_BROWN, Font.BOLD), gbc);
+            gbc.gridy = 1;
+            editDialog.add(createStyledLabel("Price:", DARK_BROWN, Font.BOLD), gbc);
+            gbc.gridx = 1;
+            editDialog.add(editPriceField, gbc);
+            gbc.gridx = 0; gbc.gridy = 2;
+            editDialog.add(createStyledLabel("Quantity:", DARK_BROWN, Font.BOLD), gbc);
+            gbc.gridx = 1;
+            editDialog.add(editQuantityField, gbc);
+
+            JPanel buttonPanel = new JPanel(new FlowLayout());
+            buttonPanel.setBackground(CREAM_WHITE);
+            JButton saveBtn = createStyledButton("Save", new Color(46, 125, 50), CREAM_WHITE);
+            JButton cancelBtn = createStyledButton("Cancel", new Color(211, 47, 47), CREAM_WHITE);
+
+            saveBtn.addActionListener(e -> {
+                try {
+                    double newPrice = Double.parseDouble(editPriceField.getText());
+                    int newQuantity = Integer.parseInt(editQuantityField.getText());
+
+                    if (newPrice > 0 && newQuantity > 0) {
+                        double newSubtotal = newPrice * newQuantity;
+
+                        tableModel.setValueAt(newPrice, row, 2);
+                        tableModel.setValueAt(newQuantity, row, 3);
+                        tableModel.setValueAt(newSubtotal, row, 4);
+
+                        if (row < supplyDetailsList.size()) {
+                            String[] item = supplyDetailsList.get(row);
+                            item[3] = String.valueOf(newPrice);
+                            item[4] = String.valueOf(newQuantity);
+                            item[5] = String.valueOf(newSubtotal);
+                        }
+
+                        editDialog.dispose();
+                    } else {
+                        JOptionPane.showMessageDialog(editDialog, "Please enter valid positive numbers");
+                    }
+                } catch (NumberFormatException ex) {
+                    JOptionPane.showMessageDialog(editDialog, "Please enter valid numbers");
+                }
+            });
+
+            cancelBtn.addActionListener(e -> editDialog.dispose());
+
+            buttonPanel.add(saveBtn);
+            buttonPanel.add(cancelBtn);
+
+            gbc.gridx = 0; gbc.gridy = 3;
+            gbc.gridwidth = 2;
+            editDialog.add(buttonPanel, gbc);
+
+            editDialog.pack();
+            editDialog.setLocationRelativeTo(this);
+            editDialog.setVisible(true);
+        }
+    }
+
+    private void confirmStockIn() {
+        if (dateField.getText().trim().isEmpty() || supplyDetailsList.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please complete all fields and add at least one item.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try (BufferedWriter detailsWriter = new BufferedWriter(new FileWriter(SUPPLIER_DETAILS_FILE, true));
+             BufferedWriter supplyWriter = new BufferedWriter(new FileWriter(SUPPLY_FILE, true))) {
+
+            // Generate new supply ID for this confirmed order
+            String newSupplyId = generateNewSupplyId();
+
+            Map<String, List<String[]>> groupedItems = new HashMap<>();
+            for (String[] item : supplyDetailsList) {
+                // Update all items with the new supply ID
+                item[0] = newSupplyId;
+                groupedItems.computeIfAbsent(newSupplyId, k -> new ArrayList<>()).add(item);
+            }
+
+            for (Map.Entry<String, List<String[]>> entry : groupedItems.entrySet()) {
+                String supplyId = entry.getKey();
+                List<String[]> items = entry.getValue();
+                String supplierName = items.get(0)[2];
+                String orNumber = items.get(0)[6];
+                String date = dateField.getText().trim();
+                String employeeId = employeeIdField.getText().trim();
+
+                double total = items.stream()
+                        .mapToDouble(item -> Double.parseDouble(item[5]))
+                        .sum();
+
+                if (!supplyColorMap.containsKey(supplyId)) {
+                    supplyColorMap.put(supplyId, generatePastelColor());
+                }
+
+                // Write supply record
+                supplyWriter.write("SupplyID: " + supplyId); supplyWriter.newLine();
+                supplyWriter.write("DateOfPurchase: " + date); supplyWriter.newLine();
+                supplyWriter.write("Supplier: " + supplierName); supplyWriter.newLine();
+                supplyWriter.write("ORNumber: " + orNumber); supplyWriter.newLine();
+                supplyWriter.write("Total: " + total); supplyWriter.newLine();
+                supplyWriter.write("Employee: " + employeeId); supplyWriter.newLine();
+                supplyWriter.newLine();
+
+                // Write supply details
+                for (String[] item : items) {
+                    detailsWriter.write("SupplyID: " + item[0]); detailsWriter.newLine();
+                    detailsWriter.write("ProductID: " + item[1]); detailsWriter.newLine();
+                    detailsWriter.write("Price: " + item[3]); detailsWriter.newLine();
+                    detailsWriter.write("Quantity: " + item[4]); detailsWriter.newLine();
+                    detailsWriter.write("Subtotal: " + item[5]); detailsWriter.newLine();
+                    detailsWriter.newLine();
+                }
+            }
+
+            detailsWriter.flush();
+            supplyWriter.flush();
+
+            // Update inventory and CSV
+            for (String[] item : supplyDetailsList) {
+                String productId = item[1];
+                int quantity = Integer.parseInt(item[4]);
+                database.addStockByProductID(productId, quantity);
+
+                // Update CSV
+                String productName = database.getProductName(productId);
+                int currentStock = database.getProductStock(productId);
+                CSVManager.updateProduct(productName, currentStock);
+                System.out.println("Updated inventory for product " + productId + " by " + quantity + " units");
+            }
+
+            refreshDashboardStats();
+            JOptionPane.showMessageDialog(this, "Stock-in recorded successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+
+            // Update the current supply ID for next use
+            this.currentSupplyId = newSupplyId;
+
+            clearForm();
+            loadFileData();
+
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Failed to write files: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Error updating inventory: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void clearForm() {
+        supplierComboBox.setSelectedIndex(0);
+        productIdComboBox.setSelectedIndex(0);
+        priceField.setText("");
+        quantityField.setText("");
+        orNumberField.setText("");
+        dateField.setText(new SimpleDateFormat("MM-dd-yy").format(new Date()));
+        supplyIdField.setText(currentSupplyId);
+        tableModel.setRowCount(0);
+        supplyDetailsList.clear();
+    }
+
+    private void loadFileData() {
+        supplyTableModel.setRowCount(0);
+        supplyDetailsTableModel.setRowCount(0);
+
+        try {
+            // Load Supply table
+            if (new File(SUPPLY_FILE).exists()) {
+                try (BufferedReader supplyReader = new BufferedReader(new FileReader(SUPPLY_FILE))) {
+                    String line;
+                    List<String> temp = new ArrayList<>();
+                    while ((line = supplyReader.readLine()) != null) {
+                        if (!line.trim().isEmpty()) {
+                            if (line.contains(": ")) {
+                                temp.add(line.split(": ", 2)[1]);
+                            }
+                            if (temp.size() == 6) {
+                                String[] rowData = new String[]{
+                                        temp.get(0), // SupplyID
+                                        temp.get(1), // DateOfPurchase
+                                        temp.get(2), // Supplier
+                                        temp.get(3), // ORNumber
+                                        temp.get(4), // Total
+                                        temp.get(5)  // EmployeeID
+                                };
+                                supplyTableModel.addRow(rowData);
+
+                                if (!supplyColorMap.containsKey(temp.get(0))) {
+                                    supplyColorMap.put(temp.get(0), generatePastelColor());
+                                }
+                                temp.clear();
+                            }
+                        } else {
+                            temp.clear();
+                        }
+                    }
+                }
+            }
+
+            // Load Supplier Details table
+            if (new File(SUPPLIER_DETAILS_FILE).exists()) {
+                try (BufferedReader detailsReader = new BufferedReader(new FileReader(SUPPLIER_DETAILS_FILE))) {
+                    String line;
+                    List<String> temp = new ArrayList<>();
+                    while ((line = detailsReader.readLine()) != null) {
+                        if (!line.trim().isEmpty()) {
+                            if (line.contains(": ")) {
+                                temp.add(line.split(": ", 2)[1]);
+                            }
+                            if (temp.size() == 5) {
+                                supplyDetailsTableModel.addRow(temp.toArray());
+                                temp.clear();
+                            }
+                        } else {
+                            temp.clear();
+                        }
+                    }
+                }
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error reading files: " + e.getMessage());
+        }
+    }
+
+    private void showTabularDataView() {
+        JFrame tabularFrame = new JFrame("Tabular Data View");
+        tabularFrame.setSize(800, 600);
+        tabularFrame.setLocationRelativeTo(this);
+
+        JTabbedPane tabbedPane = new JTabbedPane();
+
+        JTextArea supplyTextArea = new JTextArea();
+        supplyTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        supplyTextArea.setText(getSupplyTabularData());
+        supplyTextArea.setEditable(false);
+        JScrollPane supplyScrollPane = new JScrollPane(supplyTextArea);
+        tabbedPane.addTab("Supply Records", supplyScrollPane);
+
+        JTextArea detailsTextArea = new JTextArea();
+        detailsTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        detailsTextArea.setText(getSupplyDetailsTabularData());
+        detailsTextArea.setEditable(false);
+        JScrollPane detailsScrollPane = new JScrollPane(detailsTextArea);
+        tabbedPane.addTab("Supply Details", detailsScrollPane);
+
+        tabularFrame.add(tabbedPane);
+        tabularFrame.setVisible(true);
+    }
+
+    private String getSupplyTabularData() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("SUPPLY RECORDS - TABULAR FORMAT\n");
+        sb.append("=".repeat(100)).append("\n\n");
+
+        sb.append(String.format("%-10s %-12s %-15s %-15s %-12s %-12s\n",
+                "SupplyID", "Date", "Supplier", "OR Number", "Total", "Employee"));
+        sb.append("-".repeat(100)).append("\n");
+
+        for (int i = 0; i < supplyTableModel.getRowCount(); i++) {
+            sb.append(String.format("%-10s %-12s %-15s %-15s ₱%10.2f %-12s\n",
+                    supplyTableModel.getValueAt(i, 0),
+                    supplyTableModel.getValueAt(i, 1),
+                    supplyTableModel.getValueAt(i, 2),
+                    supplyTableModel.getValueAt(i, 3),
+                    Double.parseDouble(supplyTableModel.getValueAt(i, 4).toString()),
+                    supplyTableModel.getValueAt(i, 5)));
+        }
+
+        sb.append("-".repeat(100)).append("\n");
+        sb.append(String.format("Total Supply Records: %d\n", supplyTableModel.getRowCount()));
+
+        return sb.toString();
+    }
+
+    private String getSupplyDetailsTabularData() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("SUPPLY DETAILS - TABULAR FORMAT\n");
+        sb.append("=".repeat(80)).append("\n\n");
+
+        sb.append(String.format("%-10s %-12s %-10s %-8s %-12s\n",
+                "SupplyID", "ProductID", "Price", "Quantity", "Subtotal"));
+        sb.append("-".repeat(80)).append("\n");
+
+        for (int i = 0; i < supplyDetailsTableModel.getRowCount(); i++) {
+            sb.append(String.format("%-10s %-12s ₱%8.2f %8s  ₱%10.2f\n",
+                    supplyDetailsTableModel.getValueAt(i, 0),
+                    supplyDetailsTableModel.getValueAt(i, 1),
+                    Double.parseDouble(supplyDetailsTableModel.getValueAt(i, 2).toString()),
+                    supplyDetailsTableModel.getValueAt(i, 3),
+                    Double.parseDouble(supplyDetailsTableModel.getValueAt(i, 4).toString())));
+        }
+
+        sb.append("-".repeat(80)).append("\n");
+        sb.append(String.format("Total Detail Records: %d\n", supplyDetailsTableModel.getRowCount()));
+
+        return sb.toString();
+    }
+
+    private void refreshDashboardStats() {
+        for (Frame frame : JFrame.getFrames()) {
+            if (frame instanceof Dashboard) {
+                ((Dashboard) frame).refreshStats();
+                break;
+            }
+        }
+    }
+}
