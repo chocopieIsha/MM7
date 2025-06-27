@@ -1,0 +1,202 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.util.Arrays;
+
+public class Login {
+    private JFrame loginFrame;
+    private JTextField txtUsername;
+    private JPasswordField txtPassword;
+    private JButton btnLogin;
+    private ImageIcon logoIcon;
+
+    // Color scheme
+    private final Color BROWN_THEME = new Color(139, 69, 19); // SaddleBrown
+    private final Color LIGHT_BROWN = new Color(210, 180, 140); // Tan
+    private final Color CREAM = new Color(255, 253, 245); // Off-white cream
+
+    public Login() {
+        createLoginUI();
+    }
+
+    private void createLoginUI() {
+        loginFrame = new JFrame("Macrina System Login");
+        loginFrame.setLayout(new BorderLayout());
+        loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        loginFrame.setSize(800, 400);
+        loginFrame.setLocationRelativeTo(null);
+        loginFrame.getContentPane().setBackground(CREAM);
+
+        // Load stylish font
+        Font stylishFont;
+        try {
+            stylishFont = Font.createFont(Font.TRUETYPE_FONT,
+                    new java.io.File("C:/Windows/Fonts/georgia.ttf")).deriveFont(Font.BOLD, 14);
+            GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(stylishFont);
+        } catch (Exception e) {
+            stylishFont = new Font("Serif", Font.BOLD, 14); // Fallback font
+        }
+
+        // Left Panel with Logo
+        JPanel leftPanel = new JPanel(new BorderLayout());
+        leftPanel.setBackground(LIGHT_BROWN);
+        leftPanel.setPreferredSize(new Dimension(400, 400));
+        leftPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        try {
+            String imagePath = "C:/Users/wingjazz/IdeaProjects/testDemo/images/MacrinaMel.png";
+
+            System.out.println("Loading image from: " + imagePath);
+
+            ImageIcon originalIcon = new ImageIcon(imagePath);
+            if (originalIcon.getImageLoadStatus() == MediaTracker.COMPLETE) {
+                Image scaledImage = originalIcon.getImage().getScaledInstance(350, 350, Image.SCALE_SMOOTH);
+                logoIcon = new ImageIcon(scaledImage);
+            } else {
+                throw new Exception("Image failed to load");
+            }
+        } catch (Exception e) {
+            System.out.println("Error loading logo: " + e.getMessage());
+            logoIcon = createPlaceholderLogo();
+        }
+
+        JLabel logoLabel = new JLabel(logoIcon);
+        logoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        leftPanel.add(logoLabel, BorderLayout.CENTER);
+
+        // Right Panel with Login Form
+        JPanel rightPanel = new JPanel(new GridBagLayout());
+        rightPanel.setBackground(CREAM);
+        rightPanel.setBorder(BorderFactory.createEmptyBorder(50, 50, 50, 50));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridwidth = GridBagConstraints.REMAINDER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(10, 10, 10, 10);
+
+        // Title Label
+        JLabel lblLogin = new JLabel("LOGIN TO SYSTEM");
+        lblLogin.setFont(stylishFont.deriveFont(Font.BOLD, 24f));
+        lblLogin.setForeground(BROWN_THEME);
+        lblLogin.setHorizontalAlignment(SwingConstants.CENTER);
+        rightPanel.add(lblLogin, gbc);
+
+        // Form Fields
+        txtUsername = new JTextField(20);
+        txtUsername.setFont(stylishFont);
+        txtUsername.setForeground(BROWN_THEME);
+        txtUsername.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(LIGHT_BROWN, 1),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)));
+
+        txtPassword = new JPasswordField(20);
+        txtPassword.setFont(stylishFont);
+        txtPassword.setForeground(BROWN_THEME);
+        txtPassword.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(LIGHT_BROWN, 1),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)));
+
+        btnLogin = new JButton("Login");
+        btnLogin.setFont(stylishFont.deriveFont(Font.BOLD, 16f));
+        btnLogin.setForeground(Color.WHITE);
+        btnLogin.setBackground(BROWN_THEME);
+        btnLogin.setBorder(BorderFactory.createEmptyBorder(10, 25, 10, 25));
+        btnLogin.setFocusPainted(false);
+        btnLogin.setOpaque(true);
+        btnLogin.setContentAreaFilled(true);
+        btnLogin.setBorderPainted(false);
+
+        btnLogin.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                btnLogin.setBackground(BROWN_THEME.darker());
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                btnLogin.setBackground(BROWN_THEME);
+            }
+        });
+
+        addLabelAndField(rightPanel, "Username:", txtUsername, gbc, stylishFont);
+        addLabelAndField(rightPanel, "Password:", txtPassword, gbc, stylishFont);
+
+        gbc.insets = new Insets(20, 10, 10, 10);
+        rightPanel.add(btnLogin, gbc);
+
+        // Add action listener
+        btnLogin.addActionListener(e -> authenticateUser());
+
+        // Add panels to frame
+        loginFrame.add(leftPanel, BorderLayout.WEST);
+        loginFrame.add(rightPanel, BorderLayout.CENTER);
+        loginFrame.setVisible(true);
+    }
+
+    private ImageIcon createPlaceholderLogo() {
+        JLabel placeholder = new JLabel("MACRINA MELECIO");
+        placeholder.setFont(new Font("Georgia", Font.BOLD, 24));
+        placeholder.setForeground(BROWN_THEME);
+        placeholder.setHorizontalAlignment(SwingConstants.CENTER);
+        placeholder.setPreferredSize(new Dimension(400, 400));
+
+        BufferedImage image = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g2d = image.createGraphics();
+        g2d.setColor(LIGHT_BROWN);
+        g2d.fillRect(0, 0, 400, 400);
+        placeholder.paint(g2d);
+        g2d.dispose();
+        return new ImageIcon(image);
+    }
+
+    private void addLabelAndField(JPanel panel, String labelText, JComponent field,
+                                  GridBagConstraints gbc, Font font) {
+        JLabel label = new JLabel(labelText);
+        label.setFont(font);
+        label.setForeground(BROWN_THEME);
+        panel.add(label, gbc);
+        panel.add(field, gbc);
+    }
+
+    // Update in Login.java
+    // Login.java - Update the authenticateUser method
+    private void authenticateUser() {
+        String username = txtUsername.getText().trim();
+        char[] passwordChars = txtPassword.getPassword();
+        String password = new String(passwordChars).trim();
+
+        try {
+            if (username.isEmpty() || password.isEmpty()) {
+                JOptionPane.showMessageDialog(loginFrame,
+                        "Please enter both username and password",
+                        "Login Error",
+                        JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            UserManager userManager = new UserManager();
+            if (userManager.authenticate(username, password)) {
+                User user = userManager.getUser(username);
+                loginFrame.dispose();
+                new Dashboard(username, "Admin".equals(user.getRole()));
+            } else {
+                JOptionPane.showMessageDialog(loginFrame,
+                        "Invalid username or password",
+                        "Login Failed",
+                        JOptionPane.ERROR_MESSAGE);
+                txtPassword.setText("");
+            }
+        } finally {
+            Arrays.fill(passwordChars, '\0');
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            new Login();
+        });
+    }
+}
+//new
