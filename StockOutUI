@@ -1,0 +1,969 @@
+import javax.swing.*;
+import javax.swing.border.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.List;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
+
+public class StockOutUI extends JFrame {
+    // Colors for the brown/cream theme
+    private static final Color CREAM = new Color(245, 240, 225);
+    private static final Color LIGHT_BROWN = new Color(210, 180, 140);
+    private static final Color MEDIUM_BROWN = new Color(160, 120, 90);
+    private static final Color DARK_BROWN = new Color(100, 70, 50);
+    private static final Color ACCENT_COLOR = new Color(180, 150, 120);
+
+    // Fonts
+    private static final Font HEADER_FONT = new Font("Segoe UI", Font.BOLD, 14);
+    private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 13);
+    private static final Font BUTTON_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font TABLE_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+
+    private Database database;
+    private String currentUser;
+    private List<String[]> orderDetailsList = new ArrayList<>();
+    private String currentCustomer = "";
+    private Map<String, Color> orderColors = new HashMap<>();
+    private Random random = new Random();
+
+    private JTextField dateField, customerField, employeeIdField, orderIdField;
+    private JComboBox<String> productIdComboBox;
+    private JTextField priceField;
+    private JSpinner quantitySpinner;
+    private JTable itemsTable, ordersTable, orderDetailsTable;
+    private DefaultTableModel itemsModel, ordersModel, orderDetailsModel;
+
+    public StockOutUI(Database database, String currentUser) {
+        this.database = database;
+        this.currentUser = currentUser;
+
+        setTitle("Stock Out - Macrina System");
+        setSize(1200, 850);
+        setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(CREAM);
+        createUI();
+        setVisible(true);
+        loadExistingData();
+    }
+
+    private void createUI() {
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        mainPanel.setBackground(CREAM);
+        setContentPane(mainPanel);
+
+        // Top Form Panel with rounded border
+        JPanel formPanel = new JPanel(new GridLayout(0, 2, 20, 10));
+        formPanel.setBorder(new CompoundBorder(
+                new LineBorder(MEDIUM_BROWN, 1, true),
+                new EmptyBorder(10, 10, 10, 10)
+        ));
+        formPanel.setBackground(LIGHT_BROWN);
+
+        JPanel leftFormPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        leftFormPanel.setBackground(LIGHT_BROWN);
+        JPanel rightFormPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        rightFormPanel.setBackground(LIGHT_BROWN);
+
+        // Left Form (Order Info)
+        orderIdField = createStyledTextField(false);
+        orderIdField.setText(generateOrderID());
+        dateField = createStyledTextField(true);
+        dateField.setText(new SimpleDateFormat("MM-dd-yy").format(new Date()));
+        customerField = createStyledTextField(true);
+
+        customerField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent evt) {
+                checkForNewCustomer();
+            }
+        });
+
+        employeeIdField = createStyledTextField(false);
+        employeeIdField.setText(currentUser);
+        priceField = createStyledTextField(false);
+
+        SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, Integer.MAX_VALUE, 1);
+        quantitySpinner = new JSpinner(spinnerModel);
+        JSpinner.NumberEditor editor = new JSpinner.NumberEditor(quantitySpinner, "#");
+        quantitySpinner.setEditor(editor);
+        quantitySpinner.setFont(LABEL_FONT);
+        quantitySpinner.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(2, 5, 2, 5)
+        ));
+
+        addFormRow(leftFormPanel, "Order ID:", orderIdField);
+        addFormRow(leftFormPanel, "Date (MM-DD-YY):", dateField);
+        addFormRow(leftFormPanel, "Customer:", customerField);
+        addFormRow(leftFormPanel, "Employee:", employeeIdField);
+
+        // Right Form (Product Info)
+        productIdComboBox = createStyledComboBox();
+        loadProductsIntoComboBox();
+
+        JButton addButton = createStyledButton("Add to Order", MEDIUM_BROWN);
+        addButton.addActionListener(e -> addToOrder());
+
+        addFormRow(rightFormPanel, "Product:", productIdComboBox);
+        addFormRow(rightFormPanel, "Price:", priceField);
+        addFormRow(rightFormPanel, "Quantity:", quantitySpinner);
+        rightFormPanel.add(new JLabel()); // Empty label for spacing
+        rightFormPanel.add(addButton);
+
+        formPanel.add(leftFormPanel);
+        formPanel.add(rightFormPanel);
+        mainPanel.add(formPanel, BorderLayout.NORTH);
+
+        // Middle Table (Order Items) with custom styling
+        itemsModel = new DefaultTableModel(new String[]{"ProductID", "Product Name", "Customer", "Price", "Quantity", "Subtotal"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        itemsTable = createStyledTable(itemsModel);
+        JScrollPane itemsScrollPane = new JScrollPane(itemsTable);
+        itemsScrollPane.setBorder(new TitledBorder(
+                new LineBorder(MEDIUM_BROWN, 1),
+                "Current Order Items",
+                TitledBorder.LEADING,
+                TitledBorder.TOP,
+                HEADER_FONT,
+                DARK_BROWN
+        ));
+        itemsScrollPane.setPreferredSize(new Dimension(1150, 250)); // Increased height
+        itemsScrollPane.setBackground(CREAM);
+
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem removeItem = new JMenuItem("Remove Selected");
+        removeItem.setFont(LABEL_FONT);
+        removeItem.setBackground(DARK_BROWN);
+        removeItem.setForeground(DARK_BROWN);
+        removeItem.addActionListener(e -> removeSelectedItem());
+        popupMenu.add(removeItem);
+        itemsTable.setComponentPopupMenu(popupMenu);
+
+        mainPanel.add(itemsScrollPane, BorderLayout.CENTER);
+
+        // Bottom Tables
+        JPanel bottomTablesPanel = new JPanel(new GridLayout(1, 2, 10, 10));
+        bottomTablesPanel.setBackground(CREAM);
+        bottomTablesPanel.setPreferredSize(new Dimension(1150, 250)); // Reduced height
+
+        // Orders Table
+        JPanel ordersPanel = new JPanel(new BorderLayout(5, 5));
+        ordersPanel.setBackground(CREAM);
+        ordersModel = new DefaultTableModel(new String[]{"OrderID", "Date", "Customer", "Total", "Employee"}, 0);
+        ordersTable = createStyledTable(ordersModel);
+
+        JScrollPane ordersScrollPane = new JScrollPane(ordersTable);
+        ordersScrollPane.setPreferredSize(new Dimension(550, 230)); // Reduced height
+        ordersScrollPane.setBorder(new TitledBorder(
+                new LineBorder(MEDIUM_BROWN, 1),
+                "ORDERS",
+                TitledBorder.LEADING,
+                TitledBorder.TOP,
+                HEADER_FONT,
+                DARK_BROWN
+        ));
+        ordersPanel.add(ordersScrollPane, BorderLayout.CENTER);
+
+        // Order Details Table
+        JPanel detailsPanel = new JPanel(new BorderLayout(5, 5));
+        detailsPanel.setBackground(CREAM);
+        orderDetailsModel = new DefaultTableModel(new String[]{"OrderID", "ProductID", "Price", "Quantity", "Subtotal"}, 0);
+        orderDetailsTable = createStyledTable(orderDetailsModel);
+        JScrollPane detailsScrollPane = new JScrollPane(orderDetailsTable);
+        detailsScrollPane.setPreferredSize(new Dimension(550, 230)); // Reduced height
+        detailsScrollPane.setBorder(new TitledBorder(
+                new LineBorder(MEDIUM_BROWN, 1),
+                "ORDER DETAILS",
+                TitledBorder.LEADING,
+                TitledBorder.TOP,
+                HEADER_FONT,
+                DARK_BROWN
+        ));
+        detailsPanel.add(detailsScrollPane, BorderLayout.CENTER);
+
+        bottomTablesPanel.add(ordersPanel);
+        bottomTablesPanel.add(detailsPanel);
+
+        // Bottom Buttons
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(CREAM);
+
+        JButton viewDataButton = createStyledButton("View Tabular Data", ACCENT_COLOR);
+        JButton newCustomerButton = createStyledButton("New Customer", ACCENT_COLOR);
+        JButton clearButton = createStyledButton("Clear Order", ACCENT_COLOR);
+        JButton confirmButton = createStyledButton("Confirm Sale", MEDIUM_BROWN);
+        JButton cancelButton = createStyledButton("Cancel", DARK_BROWN);
+
+        viewDataButton.addActionListener(e -> showTabularDataView());
+        newCustomerButton.addActionListener(e -> startNewCustomerOrder());
+        clearButton.addActionListener(e -> resetForm());
+        confirmButton.addActionListener(e -> confirmOrder());
+        cancelButton.addActionListener(e -> dispose());
+
+        buttonPanel.add(viewDataButton);
+        buttonPanel.add(newCustomerButton);
+        buttonPanel.add(clearButton);
+        buttonPanel.add(confirmButton);
+        buttonPanel.add(cancelButton);
+
+        JPanel southPanel = new JPanel(new BorderLayout(10, 10));
+        southPanel.setBackground(CREAM);
+        southPanel.add(bottomTablesPanel, BorderLayout.CENTER);
+        southPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(southPanel, BorderLayout.SOUTH);
+    }
+
+    private JTextField createStyledTextField(boolean editable) {
+        JTextField field = new JTextField();
+        field.setEditable(editable);
+        field.setFont(LABEL_FONT);
+        field.setBackground(editable ? Color.WHITE : new Color(240, 240, 240));
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+        field.setForeground(DARK_BROWN);
+        return field;
+    }
+
+    private JComboBox<String> createStyledComboBox() {
+        JComboBox<String> combo = new JComboBox<>();
+        combo.setFont(LABEL_FONT);
+        combo.setBackground(Color.WHITE);
+        combo.setForeground(DARK_BROWN);
+        combo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(MEDIUM_BROWN, 1),
+                BorderFactory.createEmptyBorder(2, 5, 2, 5)
+        ));
+        return combo;
+    }
+
+    private JButton createStyledButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(BUTTON_FONT);
+        button.setBackground(bgColor);
+        button.setForeground(DARK_BROWN);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(bgColor.darker(), 1),
+                BorderFactory.createEmptyBorder(5, 15, 5, 15)
+        ));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor.brighter());
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor);
+            }
+        });
+
+        return button;
+    }
+
+    private JTable createStyledTable(DefaultTableModel model) {
+        JTable table = new JTable(model) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(245, 245, 245));
+                    c.setForeground(DARK_BROWN);
+                }
+
+                // Apply color coding for OrderID columns
+                if (column == 0 && (this == ordersTable || this == orderDetailsTable)) {
+                    String orderId = getValueAt(row, 0).toString();
+                    Color orderColor = orderColors.getOrDefault(orderId, Color.WHITE);
+                    c.setBackground(blendColors(c.getBackground(), orderColor, 0.3f));
+                }
+
+                return c;
+            }
+        };
+
+        table.setFont(TABLE_FONT);
+        table.setRowHeight(25);
+        table.setSelectionBackground(ACCENT_COLOR);
+        table.setSelectionForeground(Color.WHITE);
+        table.setGridColor(new Color(220, 220, 220));
+        table.setShowGrid(true);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setFillsViewportHeight(true);
+
+        // Header styling
+        JTableHeader header = table.getTableHeader();
+        header.setFont(HEADER_FONT);
+        header.setBackground(MEDIUM_BROWN);
+        header.setForeground(DARK_BROWN);
+        header.setBorder(BorderFactory.createLineBorder(DARK_BROWN, 1));
+
+        // Cell renderer for numeric columns
+        DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
+        rightRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
+
+        if (table == itemsTable) {
+            table.getColumnModel().getColumn(0).setPreferredWidth(80);  // ProductID
+            table.getColumnModel().getColumn(1).setPreferredWidth(180); // Product Name
+            table.getColumnModel().getColumn(2).setPreferredWidth(100); // Customer
+            table.getColumnModel().getColumn(3).setPreferredWidth(80);  // Price
+            table.getColumnModel().getColumn(4).setPreferredWidth(60);  // Quantity
+            table.getColumnModel().getColumn(5).setPreferredWidth(100); // Subtotal
+
+            // Right align numeric columns
+            table.getColumnModel().getColumn(3).setCellRenderer(rightRenderer);
+            table.getColumnModel().getColumn(4).setCellRenderer(rightRenderer);
+            table.getColumnModel().getColumn(5).setCellRenderer(rightRenderer);
+        } else if (table == ordersTable) {
+            table.getColumnModel().getColumn(0).setPreferredWidth(100); // OrderID
+            table.getColumnModel().getColumn(1).setPreferredWidth(80);  // Date
+            table.getColumnModel().getColumn(2).setPreferredWidth(120); // Customer
+            table.getColumnModel().getColumn(3).setPreferredWidth(80);  // Total
+            table.getColumnModel().getColumn(4).setPreferredWidth(80);  // EmployeeID
+
+            // Right align total column
+            table.getColumnModel().getColumn(3).setCellRenderer(rightRenderer);
+        } else if (table == orderDetailsTable) {
+            table.getColumnModel().getColumn(0).setPreferredWidth(100); // OrderID
+            table.getColumnModel().getColumn(1).setPreferredWidth(100); // ProductID
+            table.getColumnModel().getColumn(2).setPreferredWidth(80);  // Price
+            table.getColumnModel().getColumn(3).setPreferredWidth(60);  // Quantity
+            table.getColumnModel().getColumn(4).setPreferredWidth(100); // Subtotal
+
+            // Right align numeric columns
+            table.getColumnModel().getColumn(2).setCellRenderer(rightRenderer);
+            table.getColumnModel().getColumn(3).setCellRenderer(rightRenderer);
+            table.getColumnModel().getColumn(4).setCellRenderer(rightRenderer);
+        }
+
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+        return table;
+    }
+
+    private Color blendColors(Color bg, Color fg, float alpha) {
+        float[] bgComponents = bg.getRGBColorComponents(null);
+        float[] fgComponents = fg.getRGBColorComponents(null);
+
+        float r = bgComponents[0] * (1 - alpha) + fgComponents[0] * alpha;
+        float g = bgComponents[1] * (1 - alpha) + fgComponents[1] * alpha;
+        float b = bgComponents[2] * (1 - alpha) + fgComponents[2] * alpha;
+
+        return new Color(r, g, b);
+    }
+
+    private void addFormRow(JPanel panel, String labelText, JComponent field) {
+        JLabel label = new JLabel(labelText);
+        label.setFont(LABEL_FONT);
+        label.setForeground(DARK_BROWN);
+        panel.add(label);
+        panel.add(field);
+    }
+
+    private void checkForNewCustomer() {
+        String enteredCustomer = customerField.getText().trim();
+
+        if (!enteredCustomer.isEmpty() && !enteredCustomer.equals(currentCustomer)) {
+            if (!currentCustomer.isEmpty() && itemsModel.getRowCount() > 0) {
+                int choice = JOptionPane.showConfirmDialog(this,
+                        "You're entering a new customer but there are items in the current order.\n" +
+                                "Do you want to start a new order? (Current items will be cleared)",
+                        "New Customer Detected",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE);
+
+                if (choice == JOptionPane.YES_OPTION) {
+                    startNewCustomerOrder();
+                } else {
+                    customerField.setText(currentCustomer);
+                }
+            } else {
+                currentCustomer = enteredCustomer;
+            }
+        }
+    }
+
+    private void startNewCustomerOrder() {
+        if (itemsModel.getRowCount() > 0) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Starting a new customer order will clear current items.\n" +
+                            "Are you sure you want to continue?",
+                    "Confirm New Order",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+
+            if (choice != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+
+        resetForm();
+        customerField.requestFocus();
+        JOptionPane.showMessageDialog(this,
+                "Ready for new customer order.\nOrder ID: " + orderIdField.getText(),
+                "New Order Started",
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void loadProductsIntoComboBox() {
+        productIdComboBox.removeAllItems();
+        Map<String, String> productMap = database.getProductsWithNames();
+
+        for (Map.Entry<String, String> entry : productMap.entrySet()) {
+            productIdComboBox.addItem(entry.getKey() + " - " + entry.getValue());
+        }
+
+        productIdComboBox.addActionListener(e -> updatePriceField());
+
+        if (productIdComboBox.getItemCount() > 0) {
+            productIdComboBox.setSelectedIndex(0);
+            updatePriceField();
+        }
+    }
+
+    private void updatePriceField() {
+        String selected = (String) productIdComboBox.getSelectedItem();
+        if (selected != null) {
+            String[] parts = selected.split(" - ");
+            if (parts.length > 0) {
+                String price = database.getProductPrice(parts[0]);
+                priceField.setText(price != null ? price : "0.00");
+            }
+        }
+    }
+
+    private String generateOrderID() {
+        int nextOrderNumber = getNextOrderNumber();
+        return String.format("ORD-%06d", nextOrderNumber);
+    }
+
+    private int getNextOrderNumber() {
+        int maxOrderNum = 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader("Order.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("OrderID: ORD-")) {
+                    String orderIdStr = line.substring(13);
+                    try {
+                        int orderNum = Integer.parseInt(orderIdStr);
+                        maxOrderNum = Math.max(maxOrderNum, orderNum);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Warning: Malformed OrderID found: " + line);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Order file not found. Starting from order 1.");
+        }
+
+        return maxOrderNum + 1;
+    }
+
+    private boolean isOrderIDUnique(String orderId) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("Order.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.equals("OrderID: " + orderId)) {
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            return true;
+        }
+        return true;
+    }
+
+    private void addToOrder() {
+        String customerName = customerField.getText().trim();
+
+        if (customerName.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Please enter customer name before adding items",
+                    "Customer Required", JOptionPane.WARNING_MESSAGE);
+            customerField.requestFocus();
+            return;
+        }
+
+        if (currentCustomer.isEmpty()) {
+            currentCustomer = customerName;
+        } else if (!currentCustomer.equals(customerName)) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "You entered a different customer name ('" + customerName + "').\n" +
+                            "Current order is for: '" + currentCustomer + "'.\n" +
+                            "Do you want to start a new order for '" + customerName + "'?",
+                    "Different Customer Detected",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+
+            if (choice == JOptionPane.YES_OPTION) {
+                startNewCustomerOrder();
+                currentCustomer = customerName;
+                customerField.setText(customerName);
+            } else {
+                customerField.setText(currentCustomer);
+                return;
+            }
+        }
+
+        String selected = (String) productIdComboBox.getSelectedItem();
+        String priceText = priceField.getText().trim();
+        int quantity = (Integer) quantitySpinner.getValue();
+
+        if (selected == null || priceText.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please select a product",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            String[] parts = selected.split(" - ");
+            String productId = parts[0];
+            String productName = parts.length > 1 ? parts[1] : "";
+            double price = Double.parseDouble(priceText);
+
+            int currentStock = database.getProductStock(productId);
+            if (quantity <= 0) {
+                JOptionPane.showMessageDialog(this, "Quantity must be positive",
+                        "Invalid Quantity", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (quantity > currentStock) {
+                JOptionPane.showMessageDialog(this,
+                        "Not enough stock! Available: " + currentStock,
+                        "Stock Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            double subtotal = price * quantity;
+
+            boolean productExists = false;
+            for (int i = 0; i < itemsModel.getRowCount(); i++) {
+                if (itemsModel.getValueAt(i, 0).equals(productId) &&
+                        itemsModel.getValueAt(i, 2).equals(currentCustomer)) {
+                    int existingQty = Integer.parseInt(itemsModel.getValueAt(i, 4).toString());
+                    int newQty = existingQty + quantity;
+
+                    if (newQty > currentStock) {
+                        JOptionPane.showMessageDialog(this,
+                                "Total quantity (" + newQty + ") exceeds available stock (" + currentStock + ")",
+                                "Stock Error", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+
+                    double newSubtotal = price * newQty;
+                    itemsModel.setValueAt(newQty, i, 4);
+                    itemsModel.setValueAt(newSubtotal, i, 5);
+
+                    for (String[] item : orderDetailsList) {
+                        if (item[1].equals(productId) && item[5].equals(currentCustomer)) {
+                            item[3] = String.valueOf(newQty);
+                            item[4] = String.valueOf(newSubtotal);
+                            break;
+                        }
+                    }
+                    productExists = true;
+                    break;
+                }
+            }
+
+            if (!productExists) {
+                itemsModel.addRow(new Object[]{
+                        productId, productName, currentCustomer, price, quantity, subtotal
+                });
+
+                orderDetailsList.add(new String[]{
+                        orderIdField.getText(),    // 0: OrderID
+                        productId,                // 1: ProductID
+                        priceText,                // 2: Price
+                        String.valueOf(quantity), // 3: Quantity
+                        String.valueOf(subtotal), // 4: Subtotal
+                        currentCustomer           // 5: Customer
+                });
+            }
+
+            quantitySpinner.setValue(1);
+            productIdComboBox.requestFocus();
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid price format",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void removeSelectedItem() {
+        int selectedRow = itemsTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            String productId = (String) itemsModel.getValueAt(selectedRow, 0);
+            String customer = (String) itemsModel.getValueAt(selectedRow, 2);
+            orderDetailsList.removeIf(item -> item[1].equals(productId) && item[5].equals(customer));
+            itemsModel.removeRow(selectedRow);
+        } else {
+            JOptionPane.showMessageDialog(this, "Please select an item to remove",
+                    "No Selection", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private void confirmOrder() {
+        String customerName = customerField.getText().trim();
+
+        if (customerName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter customer name",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            customerField.requestFocus();
+            return;
+        }
+
+        if (orderDetailsList.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please add items to the order",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (!customerName.equals(currentCustomer)) {
+            JOptionPane.showMessageDialog(this,
+                    "Customer name mismatch! Please check the customer name.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String currentOrderId = orderIdField.getText();
+        if (!isOrderIDUnique(currentOrderId)) {
+            String newOrderId = generateOrderID();
+            orderIdField.setText(newOrderId);
+
+            for (String[] item : orderDetailsList) {
+                item[0] = newOrderId;
+            }
+
+            JOptionPane.showMessageDialog(this,
+                    "Duplicate OrderID detected. Generated new ID: " + newOrderId,
+                    "OrderID Updated", JOptionPane.WARNING_MESSAGE);
+            currentOrderId = newOrderId;
+        }
+
+        try {
+            double total = orderDetailsList.stream()
+                    .mapToDouble(item -> Double.parseDouble(item[4]))
+                    .sum();
+
+            // 1. Save order to files
+            saveOrderToFile(total, customerName);
+
+            // 2. Update inventory and CSV
+            for (String[] item : orderDetailsList) {
+                String productId = item[1];
+                int quantity = Integer.parseInt(item[3]);
+                boolean success = database.deductStockByProductID(productId, quantity);
+
+                if (success) {
+                    String productName = database.getProductName(productId);
+                    int currentStock = database.getProductStock(productId);
+                    CSVManager.updateProduct(productName, currentStock);
+                }
+            }
+
+            // 3. Record the sale - this now forces a refresh of sales data
+            CSVManager.recordSale(currentOrderId, dateField.getText(), total, currentUser);
+
+            // 4. Force refresh sales data cache
+            CSVManager.getAllSales(); // Explicit refresh
+
+            // 5. Update dashboard stats
+            refreshDashboardStats();
+
+            // 6. Update UI tables
+            ordersModel.addRow(new Object[]{
+                    currentOrderId,
+                    dateField.getText(),
+                    customerName,
+                    String.format("%.2f", total),
+                    currentUser
+            });
+
+            for (String[] item : orderDetailsList) {
+                orderDetailsModel.addRow(new Object[]{
+                        item[0], item[1], item[2], item[3], item[4]
+                });
+            }
+
+            // 7. Generate color for this order
+            if (!orderColors.containsKey(currentOrderId)) {
+                orderColors.put(currentOrderId, generatePastelColor());
+            }
+
+            JOptionPane.showMessageDialog(this,
+                    "Order processed successfully!\n" +
+                            "Order ID: " + currentOrderId + "\n" +
+                            "Customer: " + customerName + "\n" +
+                            "Total: ₱" + String.format("%,.2f", total),
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+
+            resetForm();
+
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error saving order: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void refreshDashboardStats() {
+        for (Frame frame : JFrame.getFrames()) {
+            if (frame instanceof Dashboard) {
+                ((Dashboard) frame).refreshStats();
+                break;
+            }
+        }
+    }
+
+    private Color generatePastelColor() {
+        // Generate pastel colors by mixing with white
+        float hue = random.nextFloat();
+        float saturation = 0.5f + random.nextFloat() * 0.3f;
+        float brightness = 0.8f + random.nextFloat() * 0.2f;
+        return Color.getHSBColor(hue, saturation, brightness);
+    }
+
+    private void saveDailySales(double total) throws IOException {
+        String today = dateField.getText();
+        File salesFile = new File("sales.txt");
+        Map<String, Double> dailySales = new HashMap<>();
+
+        // Read existing sales data if file exists
+        if (salesFile.exists()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(salesFile))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split(":");
+                    if (parts.length == 2) {
+                        try {
+                            dailySales.put(parts[0], Double.parseDouble(parts[1]));
+                        } catch (NumberFormatException e) {
+                            System.err.println("Invalid sales data format: " + line);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update today's sales
+        double currentTotal = dailySales.getOrDefault(today, 0.0);
+        dailySales.put(today, currentTotal + total);
+
+        // Write back to file
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(salesFile))) {
+            for (Map.Entry<String, Double> entry : dailySales.entrySet()) {
+                writer.write(entry.getKey() + ":" + entry.getValue());
+                writer.newLine();
+            }
+        }
+    }
+
+    private void saveOrderToFile(double total, String customerName) throws IOException {
+        try (BufferedWriter ordersWriter = new BufferedWriter(new FileWriter("Order.txt", true));
+             BufferedWriter detailsWriter = new BufferedWriter(new FileWriter("OrderDetails.txt", true))) {
+
+            ordersWriter.write("OrderID: " + orderIdField.getText()); ordersWriter.newLine();
+            ordersWriter.write("Date: " + dateField.getText()); ordersWriter.newLine();
+            ordersWriter.write("Customer: " + customerName); ordersWriter.newLine();
+            ordersWriter.write("Total: " + String.format("%.2f", total)); ordersWriter.newLine();
+            ordersWriter.write("Employee: " + currentUser); ordersWriter.newLine();
+            ordersWriter.newLine();
+
+            for (String[] item : orderDetailsList) {
+                detailsWriter.write("OrderID: " + item[0]); detailsWriter.newLine();
+                detailsWriter.write("ProductID: " + item[1]); detailsWriter.newLine();
+                detailsWriter.write("Price: " + item[2]); detailsWriter.newLine();
+                detailsWriter.write("Quantity: " + item[3]); detailsWriter.newLine();
+                detailsWriter.write("Subtotal: " + item[4]); detailsWriter.newLine();
+                detailsWriter.newLine();
+            }
+        }
+    }
+
+    private void updateInventory() {
+        for (String[] item : orderDetailsList) {
+            String productId = item[1];
+            int quantity = Integer.parseInt(item[3]);
+
+            boolean success = database.deductStockByProductID(productId, quantity);
+            if (!success) {
+                System.err.println("Warning: Failed to deduct stock for product " + productId);
+            }
+        }
+    }
+
+    private void resetForm() {
+        orderIdField.setText(generateOrderID());
+        dateField.setText(new SimpleDateFormat("MM-dd-yy").format(new Date()));
+        customerField.setText("");
+        currentCustomer = "";
+        quantitySpinner.setValue(1);
+
+        itemsModel.setRowCount(0);
+        orderDetailsList.clear();
+
+        if (productIdComboBox.getItemCount() > 0) {
+            productIdComboBox.setSelectedIndex(0);
+            updatePriceField();
+        }
+
+        customerField.requestFocus();
+    }
+
+    private void loadExistingData() {
+        loadOrdersFromFile();
+        loadOrderDetailsFromFile();
+    }
+
+    private void loadOrdersFromFile() {
+        ordersModel.setRowCount(0);
+
+        try (BufferedReader reader = new BufferedReader(new FileReader("Order.txt"))) {
+            String line;
+            String orderId = null, date = null, customer = null, total = null, employeeId = null;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("OrderID: ")) {
+                    orderId = line.substring(9);
+                    // Ensure this order has a color
+                    if (!orderColors.containsKey(orderId)) {
+                        orderColors.put(orderId, generatePastelColor());
+                    }
+                } else if (line.startsWith("Date: ")) {
+                    date = line.substring(6);
+                } else if (line.startsWith("Customer: ")) {
+                    customer = line.substring(10);
+                } else if (line.startsWith("Total: ")) {
+                    total = line.substring(7);
+                } else if (line.startsWith("Employee: ")) {
+                    employeeId = line.substring(12);
+
+                    if (orderId != null && date != null && customer != null && total != null) {
+                        ordersModel.addRow(new Object[]{orderId, date, customer, total, employeeId});
+                    }
+
+                    orderId = date = customer = total = employeeId = null;
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Orders file not found or error reading: " + e.getMessage());
+        }
+    }
+
+    private void loadOrderDetailsFromFile() {
+        orderDetailsModel.setRowCount(0);
+
+        try (BufferedReader reader = new BufferedReader(new FileReader("OrderDetails.txt"))) {
+            String line;
+            String orderId = null, productId = null, price = null, quantity = null, subtotal = null;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("OrderID: ")) {
+                    orderId = line.substring(9);
+                } else if (line.startsWith("ProductID: ")) {
+                    productId = line.substring(11);
+                } else if (line.startsWith("Price: ")) {
+                    price = line.substring(7);
+                } else if (line.startsWith("Quantity: ")) {
+                    quantity = line.substring(10);
+                } else if (line.startsWith("Subtotal: ")) {
+                    subtotal = line.substring(10);
+
+                    if (orderId != null && productId != null && price != null && quantity != null) {
+                        orderDetailsModel.addRow(new Object[]{orderId, productId, price, quantity, subtotal});
+                    }
+
+                    orderId = productId = price = quantity = subtotal = null;
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Order details file not found or error reading: " + e.getMessage());
+        }
+    }
+
+    private void showTabularDataView() {
+        JFrame tabularFrame = new JFrame("Tabular Data View");
+        tabularFrame.setSize(800, 600);
+        tabularFrame.setLocationRelativeTo(this);
+
+        JTabbedPane tabbedPane = new JTabbedPane();
+
+        JTextArea ordersTextArea = new JTextArea();
+        ordersTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        ordersTextArea.setText(getOrdersTabularData());
+        ordersTextArea.setEditable(false);
+        JScrollPane ordersScrollPane = new JScrollPane(ordersTextArea);
+        tabbedPane.addTab("Orders", ordersScrollPane);
+
+        JTextArea detailsTextArea = new JTextArea();
+        detailsTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        detailsTextArea.setText(getOrderDetailsTabularData());
+        detailsTextArea.setEditable(false);
+        JScrollPane detailsScrollPane = new JScrollPane(detailsTextArea);
+        tabbedPane.addTab("Order Details", detailsScrollPane);
+
+        tabularFrame.add(tabbedPane);
+        tabularFrame.setVisible(true);
+    }
+
+    private String getOrdersTabularData() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("ORDERS DATA - TABULAR FORMAT\n");
+        sb.append("=".repeat(80)).append("\n\n");
+
+        sb.append(String.format("%-12s %-10s %-20s %-12s %-12s\n",
+                "OrderID", "Date", "Customer", "Total", "Employee"));
+        sb.append("-".repeat(80)).append("\n");
+
+        for (int i = 0; i < ordersModel.getRowCount(); i++) {
+            sb.append(String.format("%-12s %-10s %-20s ₱%10.2f %-12s\n",
+                    ordersModel.getValueAt(i, 0),
+                    ordersModel.getValueAt(i, 1),
+                    ordersModel.getValueAt(i, 2),
+                    Double.parseDouble(ordersModel.getValueAt(i, 3).toString()),
+                    ordersModel.getValueAt(i, 4)));
+        }
+
+        sb.append("-".repeat(80)).append("\n");
+        sb.append(String.format("Total Orders: %d\n", ordersModel.getRowCount()));
+
+        return sb.toString();
+    }
+
+    private String getOrderDetailsTabularData() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("ORDER DETAILS DATA - TABULAR FORMAT\n");
+        sb.append("=".repeat(80)).append("\n\n");
+
+        sb.append(String.format("%-12s %-12s %-10s %-8s %-12s\n",
+                "OrderID", "ProductID", "Price", "Quantity", "Subtotal"));
+        sb.append("-".repeat(80)).append("\n");
+
+        for (int i = 0; i < orderDetailsModel.getRowCount(); i++) {
+            sb.append(String.format("%-12s %-12s ₱%8.2f %8s  ₱%10.2f\n",
+                    orderDetailsModel.getValueAt(i, 0),
+                    orderDetailsModel.getValueAt(i, 1),
+                    Double.parseDouble(orderDetailsModel.getValueAt(i, 2).toString()),
+                    orderDetailsModel.getValueAt(i, 3),
+                    Double.parseDouble(orderDetailsModel.getValueAt(i, 4).toString())));
+        }
+
+        sb.append("-".repeat(80)).append("\n");
+        sb.append(String.format("Total Detail Records: %d\n", orderDetailsModel.getRowCount()));
+
+        return sb.toString();
+    }
+}
