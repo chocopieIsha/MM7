@@ -1,0 +1,1106 @@
+import javax.swing.*;
+import javax.swing.border.CompoundBorder;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.Collections;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.io.*;
+
+public class Dashboard extends JFrame {
+    private String currentUser;
+    private boolean isAdmin;
+    private Database database;
+    private JFrame inventorySystem;
+    private JFrame stockInUI;
+    private JFrame stockOutUI;
+    private JFrame ldsUI;
+    private DefaultTableModel activityModel;
+    private static final String ACTIVITY_LOG_FILE = "activity_logs.txt";
+
+    // Enhanced brown color palette
+    private final Color DARK_BROWN_1 = new Color(92, 51, 23);    // Rich dark brown
+    private final Color DARK_BROWN_2 = new Color(121, 85, 61);   // Medium brown
+    private final Color DARK_BROWN_3 = new Color(160, 116, 86);  // Light brown
+    private final Color DARK_BROWN_4 = new Color(139, 69, 19);   // Saddle brown
+    private final Color WARM_CREAM = new Color(250, 245, 235);   // Warmer cream
+    private final Color HEADER_BROWN = new Color(101, 67, 33);   // Header brown
+    private final Color ACCENT_GOLD = new Color(218, 165, 32);   // Gold accent
+    private final Color SOFT_WHITE = new Color(255, 253, 250);   // Soft white for cards
+
+    public Dashboard(String username, boolean isAdmin) {
+        this.currentUser = username;
+        this.isAdmin = isAdmin;
+        setTitle("Macrina System - Dashboard (" + username + ")");
+        database = new Database("inventory.txt");
+        createUI();
+        setSize(1200, 850);
+        setLocationRelativeTo(null);
+        setVisible(true);
+        loadActivityLogs();
+    }
+
+    private void createUI() {
+        setLayout(new BorderLayout(0, 0));
+        setSize(1000, 700);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(WARM_CREAM);
+
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                cleanupResources();
+            }
+        });
+
+        // Main container with proper spacing
+        JPanel mainContainer = new JPanel(new BorderLayout(0, 15));
+        mainContainer.setBackground(WARM_CREAM);
+        mainContainer.setBorder(new EmptyBorder(0, 0, 15, 0));
+
+        // Header panel with gradient-like effect
+        JPanel headerPanel = createHeaderPanel();
+
+        // Content panel
+        JPanel contentPanel = new JPanel(new BorderLayout(20, 20));
+        contentPanel.setBackground(WARM_CREAM);
+        contentPanel.setBorder(new EmptyBorder(20, 25, 0, 25));
+
+        // Stats panel with better spacing
+        JPanel statsPanel = createStatsPanel();
+
+        // Main action buttons panel
+        JPanel buttonPanel = createButtonPanel();
+
+        // Activity log with better styling
+        JPanel activityPanel = createActivityPanel();
+
+        // Layout assembly
+        contentPanel.add(statsPanel, BorderLayout.NORTH);
+        contentPanel.add(buttonPanel, BorderLayout.CENTER);
+
+        mainContainer.add(headerPanel, BorderLayout.NORTH);
+        mainContainer.add(contentPanel, BorderLayout.CENTER);
+        mainContainer.add(activityPanel, BorderLayout.SOUTH);
+
+        add(mainContainer, BorderLayout.CENTER);
+    }
+
+    private JPanel createHeaderPanel() {
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBorder(new EmptyBorder(20, 25, 20, 25));
+        headerPanel.setBackground(HEADER_BROWN);
+
+        // Welcome section
+        JPanel welcomePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        welcomePanel.setBackground(HEADER_BROWN);
+
+        JLabel welcomeLabel = new JLabel("Welcome back, " + currentUser + "!");
+        welcomeLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        welcomeLabel.setForeground(SOFT_WHITE);
+
+        JLabel subtitleLabel = new JLabel("MacrinaMelecio Inventory & Sales System");
+        subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        subtitleLabel.setForeground(new Color(220, 220, 220));
+
+        JPanel textPanel = new JPanel(new GridLayout(2, 1, 0, 2));
+        textPanel.setBackground(HEADER_BROWN);
+        textPanel.add(welcomeLabel);
+        textPanel.add(subtitleLabel);
+
+        welcomePanel.add(textPanel);
+        headerPanel.add(welcomePanel, BorderLayout.WEST);
+
+        return headerPanel;
+    }
+
+    private JPanel createStatsPanel() {
+        JPanel statsPanel = new JPanel(new GridLayout(1, 4, 20, 0));
+        statsPanel.setBorder(new EmptyBorder(0, 0, 25, 0));
+        statsPanel.setBackground(WARM_CREAM);
+
+        // Update stats from CSV files
+        int totalProducts = CSVManager.getTotalProductsCount();
+        int lowStockItems = CSVManager.getTotalLowStockCount();
+        double totalSales = CSVManager.getOverallTotalSales();
+        int totalLDS = CSVManager.getOverallTotalLDSItems();
+
+        // Show all stats for both admin and sales clerk
+        statsPanel.add(createEnhancedStatCard("Total Products", String.valueOf(totalProducts), "📦", this::showProductsDialog));
+        statsPanel.add(createEnhancedStatCard("Low-Stock Items", String.valueOf(lowStockItems), "⚠️", this::showLowStockDialog));
+        statsPanel.add(createEnhancedStatCard("Total Sales", "₱" + String.format("%,.2f", totalSales), "💰", this::showSalesDialog));
+        statsPanel.add(createEnhancedStatCard("Total LDS Items", String.valueOf(totalLDS), "🚨", this::showLDSDialog));
+
+        return statsPanel;
+    }
+
+    private JPanel createButtonPanel() {
+        JPanel buttonPanel = new JPanel(new BorderLayout(20, 0)); // Changed to BorderLayout with horizontal gap
+        buttonPanel.setBorder(new EmptyBorder(0, 25, 25, 25)); // Added padding on sides
+        buttonPanel.setBackground(WARM_CREAM);
+
+        if (isAdmin) {
+            // Main modules panel (4 buttons in a grid)
+            JPanel modulesPanel = new JPanel(new GridLayout(2, 2, 20, 20)); // Adjusted gaps
+            modulesPanel.setBackground(WARM_CREAM);
+            modulesPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            // Create buttons with consistent sizing
+            Dimension moduleButtonSize = new Dimension(220, 100); // Adjusted size for module buttons
+
+            JButton inventoryButton = createEnhancedActionButton("INVENTORY", createInventoryIcon(), DARK_BROWN_1, e -> openInventorySystem());
+            inventoryButton.setPreferredSize(moduleButtonSize);
+
+            JButton stockInButton = createEnhancedActionButton("STOCK IN", createStockInIcon(), DARK_BROWN_2, e -> openStockInSystem());
+            stockInButton.setPreferredSize(moduleButtonSize);
+
+            JButton salesButton = createEnhancedActionButton("SALES", createSalesIcon(), DARK_BROWN_3, e -> openStockOutSystem());
+            salesButton.setPreferredSize(moduleButtonSize);
+
+            JButton ldsButton = createEnhancedActionButton("LDS", createLdsIcon(), DARK_BROWN_4, e -> openLDSSystem());
+            ldsButton.setPreferredSize(moduleButtonSize);
+
+            modulesPanel.add(inventoryButton);
+            modulesPanel.add(stockInButton);
+            modulesPanel.add(salesButton);
+            modulesPanel.add(ldsButton);
+
+            // User management panel (far right)
+            JPanel rightPanel = new JPanel(new BorderLayout());
+            rightPanel.setBackground(WARM_CREAM);
+
+            JButton userMgmtButton = createEnhancedActionButton("USER MANAGEMENT", UIManager.getIcon("OptionPane.questionIcon"),
+                    new Color(70, 130, 180), e -> openUserManagement());
+            userMgmtButton.setPreferredSize(new Dimension(200, 60)); // Smaller size for user management
+
+            // Add some space between main modules and user management
+            rightPanel.add(Box.createHorizontalStrut(20), BorderLayout.WEST);
+            rightPanel.add(userMgmtButton, BorderLayout.CENTER);
+            rightPanel.add(Box.createHorizontalStrut(10), BorderLayout.EAST);
+
+            // Add components to main panel
+            buttonPanel.add(modulesPanel, BorderLayout.CENTER);
+            buttonPanel.add(rightPanel, BorderLayout.EAST);
+        } else {
+            // Sales Clerk layout - centered Stock In and Sales buttons
+            buttonPanel.setLayout(new GridBagLayout());
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(10, 20, 10, 20);
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+
+            // Create a panel to hold the two buttons
+            JPanel buttonsContainer = new JPanel(new GridLayout(1, 2, 40, 0));
+            buttonsContainer.setBackground(WARM_CREAM);
+            buttonsContainer.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+            JButton stockInButton = createEnhancedActionButton("STOCK IN", createStockInIcon(), DARK_BROWN_2, e -> openStockInSystem());
+            JButton salesButton = createEnhancedActionButton("SALES", createSalesIcon(), DARK_BROWN_3, e -> openStockOutSystem());
+
+            // Set consistent button sizes
+            Dimension buttonSize = new Dimension(300, 150);
+            stockInButton.setPreferredSize(buttonSize);
+            salesButton.setPreferredSize(buttonSize);
+
+            buttonsContainer.add(stockInButton);
+            buttonsContainer.add(salesButton);
+
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            buttonPanel.add(buttonsContainer, gbc);
+        }
+
+        return buttonPanel;
+    }
+
+    private void openUserManagement() {
+        SwingUtilities.invokeLater(() -> {
+            UserManagementUI userManagementUI = new UserManagementUI();
+            userManagementUI.setVisible(true);
+            logActivity("Accessed User Management");
+        });
+    }
+
+    private Icon createInventoryIcon() {
+        return UIManager.getIcon("FileView.directoryIcon");
+    }
+
+    private Icon createStockInIcon() {
+        return UIManager.getIcon("FileView.hardDriveIcon");
+    }
+
+    private Icon createSalesIcon() {
+        return UIManager.getIcon("OptionPane.informationIcon");
+    }
+
+    private Icon createLdsIcon() {
+        return UIManager.getIcon("OptionPane.warningIcon");
+    }
+
+    private JButton createEnhancedActionButton(String text, Icon icon, Color bgColor, ActionListener action) {
+        JButton button = new JButton(text, icon);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        button.setBackground(bgColor);
+        button.setForeground(SOFT_WHITE);
+        button.setFocusPainted(false);
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setBorderPainted(true);
+
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(bgColor.darker(), 1),
+                BorderFactory.createEmptyBorder(15, 10, 15, 10)
+        ));
+        button.setHorizontalTextPosition(SwingConstants.CENTER);
+        button.setVerticalTextPosition(SwingConstants.BOTTOM);
+        button.addActionListener(action);
+
+        // Add hover effect
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                button.setBackground(bgColor.brighter());
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(ACCENT_GOLD, 1),
+                        BorderFactory.createEmptyBorder(15, 10, 15, 10)
+                ));
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                button.setBackground(bgColor);
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(bgColor.darker(), 1),
+                        BorderFactory.createEmptyBorder(15, 10, 15, 10)
+                ));
+            }
+        });
+
+        // Override UI to prevent Look and Feel from changing our colors
+        button.setUI(new javax.swing.plaf.basic.BasicButtonUI() {
+            @Override
+            public void update(Graphics g, JComponent c) {
+                if (c.isOpaque()) {
+                    g.setColor(c.getBackground());
+                    g.fillRect(0, 0, c.getWidth(), c.getHeight());
+                }
+                paint(g, c);
+            }
+        });
+
+        return button;
+    }
+
+    private JPanel createActivityPanel() {
+        JPanel activityPanel = new JPanel(new BorderLayout());
+        activityPanel.setBorder(new EmptyBorder(0, 25, 20, 25));
+        activityPanel.setBackground(WARM_CREAM);
+
+        // Header
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(WARM_CREAM);
+        headerPanel.setBorder(new EmptyBorder(0, 0, 15, 0));
+
+        JLabel activityIcon = new JLabel("📝");
+        activityIcon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+
+        JLabel activityHeader = new JLabel("  Recent Activity");
+        activityHeader.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        activityHeader.setForeground(HEADER_BROWN);
+
+        JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        titlePanel.setBackground(WARM_CREAM);
+        titlePanel.add(activityIcon);
+        titlePanel.add(activityHeader);
+
+        headerPanel.add(titlePanel, BorderLayout.WEST);
+
+        // Table Model - Added Date column
+        activityModel = new DefaultTableModel(new String[]{"Date", "Time", "Activity", "User"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        JTable activityTable = new JTable(activityModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component comp = super.prepareRenderer(renderer, row, column);
+                if (!isRowSelected(row)) {
+                    if (row % 2 == 0) {
+                        comp.setBackground(WARM_CREAM);
+                    } else {
+                        comp.setBackground(new Color(204, 170, 136));
+                    }
+                } else {
+                    comp.setBackground(new Color(245, 222, 179));
+                    comp.setForeground(DARK_BROWN_1);
+                }
+                return comp;
+            }
+        };
+
+        // Table Styling
+        activityTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        activityTable.setRowHeight(30);
+        activityTable.setShowGrid(true);
+        activityTable.setGridColor(new Color(80, 50, 30));
+        activityTable.setIntercellSpacing(new Dimension(1, 1));
+        activityTable.setBackground(new Color(245, 222, 179));
+        activityTable.setSelectionForeground(DARK_BROWN_1);
+
+        // Header Styling
+        JTableHeader header = activityTable.getTableHeader();
+        header.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        header.setBackground(DARK_BROWN_1);
+        header.setForeground(new Color(45, 25, 10));
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 2, 0, new Color(80, 40, 20)));
+        header.setOpaque(true);
+
+        // Column Widths
+        activityTable.getColumnModel().getColumn(0).setPreferredWidth(100); // Date column
+        activityTable.getColumnModel().getColumn(1).setPreferredWidth(80);  // Time column
+        activityTable.getColumnModel().getColumn(2).setPreferredWidth(400); // Activity column
+        activityTable.getColumnModel().getColumn(3).setPreferredWidth(120); // User column
+
+        JScrollPane scrollPane = new JScrollPane(activityTable);
+        scrollPane.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 180, 160), 1),
+                BorderFactory.createEmptyBorder(0, 0, 0, 0)
+        ));
+        scrollPane.setPreferredSize(new Dimension(800, 140));
+        scrollPane.getViewport().setBackground(SOFT_WHITE);
+        scrollPane.setBackground(SOFT_WHITE);
+
+        // Sample data fallback
+        if (activityModel.getRowCount() == 0) {
+            addSampleActivityData();
+        }
+
+        activityPanel.add(headerPanel, BorderLayout.NORTH);
+        activityPanel.add(scrollPane, BorderLayout.CENTER);
+
+        return activityPanel;
+    }
+
+    private void addSampleActivityData() {
+        String currentDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        String currentTime = new SimpleDateFormat("HH:mm:ss").format(new Date());
+        activityModel.addRow(new Object[]{currentDate, currentTime, "Dashboard opened", currentUser});
+        activityModel.addRow(new Object[]{"--", "--:--:--", "System ready", "System"});
+        logActivityToFile(currentDate, currentTime, "Dashboard opened", currentUser);
+    }
+
+    private JPanel createEnhancedStatCard(String title, String value, String icon, Runnable onClick) {
+        JPanel card = new JPanel(new BorderLayout(10, 8));
+        card.setBorder(new CompoundBorder(
+                BorderFactory.createLineBorder(new Color(210, 180, 140), 1),
+                new EmptyBorder(20, 20, 20, 20)
+        ));
+        card.setBackground(SOFT_WHITE);
+        card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // Add click listener
+        card.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                onClick.run();
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                card.setBorder(new CompoundBorder(
+                        BorderFactory.createLineBorder(ACCENT_GOLD, 2),
+                        new EmptyBorder(20, 20, 20, 20)
+                ));
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                card.setBorder(new CompoundBorder(
+                        BorderFactory.createLineBorder(new Color(210, 180, 140), 1),
+                        new EmptyBorder(20, 20, 20, 20)
+                ));
+            }
+        });
+
+        // Icon and title panel
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        topPanel.setBackground(SOFT_WHITE);
+
+        JLabel iconLabel = new JLabel(icon);
+        iconLabel.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 20));
+
+        JLabel titleLabel = new JLabel("  " + title);
+        titleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        titleLabel.setForeground(new Color(100, 100, 100));
+
+        topPanel.add(iconLabel);
+        topPanel.add(titleLabel);
+
+        JLabel valueLabel = new JLabel(value);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 28));
+        valueLabel.setForeground(DARK_BROWN_1);
+        valueLabel.setHorizontalAlignment(SwingConstants.LEFT);
+
+        card.add(topPanel, BorderLayout.NORTH);
+        card.add(valueLabel, BorderLayout.CENTER);
+
+        return card;
+    }
+
+    public void refreshStats() {
+        // Force reload all CSV data
+        CSVManager.getAllSales();
+        CSVManager.getAllLDSItems();
+        List<String[]> products = CSVManager.getProducts();
+        List<String[]> lowStockItems = CSVManager.getLowStockItems();
+
+        // Get fresh data
+        int totalProducts = products.size() - 1;
+        int lowStockItemsCount = lowStockItems.size() - 1;
+        double totalSales = CSVManager.getOverallTotalSales();
+        int totalLDS = CSVManager.getOverallTotalLDSItems();
+
+        // Get the stats panel properly
+        Container contentPane = getContentPane();
+        if (contentPane.getComponentCount() > 0) {
+            Component mainContainer = contentPane.getComponent(0);
+            if (mainContainer instanceof JPanel) {
+                Component[] contentComponents = ((JPanel) mainContainer).getComponents();
+                if (contentComponents.length > 1 && contentComponents[1] instanceof JPanel) {
+                    JPanel contentPanel = (JPanel) contentComponents[1];
+                    Component[] statsComponents = contentPanel.getComponents();
+                    if (statsComponents.length > 0 && statsComponents[0] instanceof JPanel) {
+                        JPanel statsPanel = (JPanel) statsComponents[0];
+
+                        // Clear and rebuild stats
+                        statsPanel.removeAll();
+
+                        statsPanel.add(createEnhancedStatCard("Total Products", String.valueOf(totalProducts), "📦", this::showProductsDialog));
+                        statsPanel.add(createEnhancedStatCard("Low-Stock Items", String.valueOf(lowStockItemsCount), "⚠️", this::showLowStockDialog));
+                        statsPanel.add(createEnhancedStatCard("Total Sales", "₱" + String.format("%,.2f", totalSales), "💰", this::showSalesDialog));
+                        statsPanel.add(createEnhancedStatCard("Total LDS Items", String.valueOf(totalLDS), "🚨", this::showLDSDialog));
+
+                        statsPanel.revalidate();
+                        statsPanel.repaint();
+
+                        System.out.println("Dashboard stats refreshed:");
+                        System.out.println("Products: " + totalProducts);
+                        System.out.println("Low Stock: " + lowStockItemsCount);
+                        System.out.println("Sales: " + totalSales);
+                        System.out.println("LDS Items: " + totalLDS);
+                    }
+                }
+            }
+        }
+    }
+
+    private void showProductsDialog() {
+        List<String[]> products = CSVManager.getProducts();
+        DefaultTableModel model = new DefaultTableModel(new String[]{"Product Name", "Quantity"}, 0);
+
+        for (int i = 1; i < products.size(); i++) {
+            String[] row = products.get(i);
+            if (row.length >= 2) {
+                model.addRow(new Object[]{row[0], row[1]});
+            }
+        }
+
+        JPanel dialogPanel = createHistoryDialogPanel("All Products", model);
+        JOptionPane.showMessageDialog(this, dialogPanel,
+                "All Products (Total: " + CSVManager.getTotalProductsCount() + ")",
+                JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void showLowStockDialog() {
+        List<String[]> lowStockItems = CSVManager.getLowStockItems();
+        DefaultTableModel model = new DefaultTableModel(new String[]{"Product Name", "Remaining Quantity"}, 0);
+
+        for (int i = 1; i < lowStockItems.size(); i++) {
+            String[] row = lowStockItems.get(i);
+            if (row.length >= 2) {
+                model.addRow(new Object[]{row[0], row[1]});
+            }
+        }
+
+        JPanel dialogPanel = createHistoryDialogPanel("Low Stock Items", model);
+        JOptionPane.showMessageDialog(this, dialogPanel,
+                "Low Stock Items (Total: " + CSVManager.getTotalLowStockCount() + ")",
+                JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void showSalesDialog() {
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setBackground(new Color(250, 245, 235));
+        tabbedPane.setForeground(new Color(101, 67, 33));
+
+        // Tab 1: All Sales
+        DefaultTableModel allSalesModel = new DefaultTableModel(
+                new String[]{"Order ID", "Date", "Total Sales", "Employee ID"}, 0);
+        List<String[]> allSales = CSVManager.getAllSales();
+
+        for (int i = 1; i < allSales.size(); i++) {
+            String[] row = allSales.get(i);
+            if (row.length >= 4) {
+                allSalesModel.addRow(new Object[]{row[0], row[1], row[2], row[3]});
+            }
+        }
+
+        JPanel allSalesPanel = createHistoryDialogPanel("All Sales", allSalesModel);
+        tabbedPane.addTab("All Sales", allSalesPanel);
+
+        // Tab 2: Sales by Date
+        Map<String, Double> salesByDate = CSVManager.getSalesByDateMap();
+        DefaultTableModel dateSalesModel = new DefaultTableModel(
+                new String[]{"Date", "Total Sales"}, 0);
+
+        for (String date : salesByDate.keySet()) {
+            dateSalesModel.addRow(new Object[]{
+                    date,
+                    "₱" + String.format("%,.2f", salesByDate.get(date))
+            });
+        }
+
+        JPanel dateSalesPanel = createHistoryDialogPanel("Sales by Date", dateSalesModel);
+        tabbedPane.addTab("Sales by Date", dateSalesPanel);
+
+        JOptionPane.showMessageDialog(this, tabbedPane,
+                "Sales Report (Total: ₱" + String.format("%,.2f", CSVManager.getOverallTotalSales()) + ")",
+                JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void showLDSDialog() {
+        List<String[]> allLDS = CSVManager.getAllLDSItems();
+
+        JTabbedPane tabbedPane = new JTabbedPane(JTabbedPane.TOP);
+        tabbedPane.setBackground(new Color(245, 238, 220));
+        tabbedPane.setForeground(new Color(101, 67, 33));
+        tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
+        // Tab 1: All LDS Items (without Remarks)
+        DefaultTableModel allModel = new DefaultTableModel(
+                new String[]{"Product Name", "Date", "Type", "Employee"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        int startIndex = allLDS.size() > 0 && allLDS.get(0)[0].equals("Product Name") ? 1 : 0;
+
+        for (int i = startIndex; i < allLDS.size(); i++) {
+            String[] row = allLDS.get(i);
+            if (row.length >= 4) {
+                allModel.addRow(new Object[]{
+                        row[0], // Product Name
+                        row[1], // Date
+                        row[2], // Type
+                        row[3]  // Employee
+                });
+            }
+        }
+
+        JTable allTable = new JTable(allModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ?
+                            new Color(250, 245, 235) :
+                            new Color(230, 215, 195));
+                    c.setForeground(new Color(70, 50, 30));
+                }
+
+                if (column == 2) {
+                    String type = getValueAt(row, column).toString();
+                    switch (type) {
+                        case "Lost":
+                            c.setForeground(new Color(160, 82, 45));
+                            break;
+                        case "Damaged":
+                            c.setForeground(new Color(139, 69, 19));
+                            break;
+                        case "Stolen":
+                            c.setForeground(new Color(178, 34, 34));
+                            break;
+                    }
+                }
+                return c;
+            }
+        };
+
+        styleLDSTable(allTable);
+        JScrollPane allScrollPane = new JScrollPane(allTable);
+        allScrollPane.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(new Color(160, 120, 90)),
+                "All LDS Items",
+                TitledBorder.LEFT,
+                TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 14),
+                new Color(101, 67, 33)));
+
+        tabbedPane.addTab("All Items", allScrollPane);
+
+        // Tab 2: Grouped by Date (without Remarks)
+        Map<String, List<String[]>> ldsByDate = new TreeMap<>(Collections.reverseOrder());
+        for (int i = startIndex; i < allLDS.size(); i++) {
+            String[] row = allLDS.get(i);
+            if (row.length >= 4) {
+                String date = row[1];
+                ldsByDate.computeIfAbsent(date, k -> new ArrayList<>()).add(row);
+            }
+        }
+
+        for (Map.Entry<String, List<String[]>> entry : ldsByDate.entrySet()) {
+            DefaultTableModel dateModel = new DefaultTableModel(
+                    new String[]{"Product Name", "Type", "Employee"}, 0);
+
+            for (String[] row : entry.getValue()) {
+                dateModel.addRow(new Object[]{
+                        row[0], // Product Name
+                        row[2], // Type
+                        row[3]  // Employee
+                });
+            }
+
+            JTable dateTable = new JTable(dateModel) {
+                @Override
+                public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                    Component c = super.prepareRenderer(renderer, row, column);
+
+                    if (!isRowSelected(row)) {
+                        c.setBackground(row % 2 == 0 ?
+                                new Color(250, 245, 235) :
+                                new Color(230, 215, 195));
+                    }
+                    return c;
+                }
+            };
+
+            styleLDSTable(dateTable);
+
+            JPanel datePanel = new JPanel(new BorderLayout());
+            datePanel.setBackground(new Color(250, 245, 235));
+
+            JLabel dateLabel = new JLabel("Date: " + entry.getKey() +
+                    " - Total Items: " + entry.getValue().size());
+            dateLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            dateLabel.setForeground(new Color(101, 67, 33));
+            dateLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+
+            datePanel.add(dateLabel, BorderLayout.NORTH);
+            datePanel.add(new JScrollPane(dateTable), BorderLayout.CENTER);
+
+            tabbedPane.addTab(entry.getKey(), datePanel);
+        }
+
+        // Rest of the method remains the same...
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(new Color(250, 245, 235));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JLabel headerLabel = new JLabel("LDS Items (Total: " + (allLDS.size() - startIndex) + ")");
+        headerLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        headerLabel.setForeground(new Color(101, 67, 33));
+        headerLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        headerLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        mainPanel.add(headerLabel, BorderLayout.NORTH);
+
+        mainPanel.add(tabbedPane, BorderLayout.CENTER);
+
+        JOptionPane.showMessageDialog(this, mainPanel,
+                "Lost/Damaged/Stolen Items",
+                JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void styleLDSTable(JTable table) {
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        table.setRowHeight(25);
+        table.setGridColor(new Color(210, 180, 140));
+
+        // Header styling
+        JTableHeader header = table.getTableHeader();
+        header.setBackground(new Color(139, 69, 19));
+        header.setForeground(DARK_BROWN_1);
+        header.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
+        // Column widths
+        table.getColumnModel().getColumn(0).setPreferredWidth(150);
+        if (table.getColumnCount() > 1) table.getColumnModel().getColumn(1).setPreferredWidth(80);
+        if (table.getColumnCount() > 2) table.getColumnModel().getColumn(2).setPreferredWidth(100);
+        if (table.getColumnCount() > 3) table.getColumnModel().getColumn(3).setPreferredWidth(200);
+
+        // Enable word wrap for remarks
+        if (table.getColumnCount() > 4) {
+            table.getColumnModel().getColumn(4).setCellRenderer(new TextAreaRenderer());
+        }
+    }
+
+    private JPanel createHistoryDialogPanel(String title, DefaultTableModel model) {
+        return createHistoryDialogPanel(title, model, "Total: " + model.getRowCount());
+    }
+
+    private JPanel createHistoryDialogPanel(String title, DefaultTableModel model, String footerText) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(new Color(250, 245, 235));
+
+        // Header with icon
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(245, 238, 220));
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(160, 120, 90)),
+                BorderFactory.createEmptyBorder(10, 15, 10, 15)
+        ));
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(new Color(101, 67, 33));
+
+        String icon = "";
+        if (title.contains("Product")) icon = "📦";
+        else if (title.contains("Stock")) icon = "⚠️";
+        else if (title.contains("Sale")) icon = "💰";
+        else if (title.contains("LDS")) icon = "🚨";
+
+        JLabel iconLabel = new JLabel(icon);
+        iconLabel.setFont(new Font("Segoe UI", Font.PLAIN, 20));
+
+        JPanel titleWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        titleWrapper.setBackground(new Color(245, 238, 220));
+        titleWrapper.add(iconLabel);
+        titleWrapper.add(titleLabel);
+
+        headerPanel.add(titleWrapper, BorderLayout.WEST);
+        panel.add(headerPanel, BorderLayout.NORTH);
+
+        // Create table with custom styling
+        JTable table = new JTable(model) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ?
+                            new Color(250, 245, 235) :
+                            new Color(230, 215, 195));
+                    c.setForeground(new Color(70, 50, 30));
+                } else {
+                    c.setBackground(new Color(205, 133, 63));
+                    c.setForeground(Color.WHITE);
+                }
+
+                // Set alignment - center for all numeric and quantity data
+                if (c instanceof JLabel) {
+                    JLabel label = (JLabel) c;
+                    if (title.contains("Sales") ||
+                            (title.contains("Product") && column == 1) ||
+                            (title.contains("Stock") && column == 1)) {
+                        // Center align for:
+                        // 1. All sales data
+                        // 2. Product quantities (column 1)
+                        // 3. Low stock quantities (column 1)
+                        label.setHorizontalAlignment(SwingConstants.CENTER);
+                    } else {
+                        // Left align for other text columns
+                        label.setHorizontalAlignment(SwingConstants.LEFT);
+                    }
+                }
+
+                return c;
+            }
+        };
+
+        // Custom header renderer for centered headers in all tables
+        table.getTableHeader().setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                                                           boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                        table, value, isSelected, hasFocus, row, column);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setBackground(new Color(139, 69, 19));
+                label.setForeground(new Color(255, 253, 250));
+                label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+                return label;
+            }
+        });
+
+        // Table styling
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        table.setRowHeight(25);
+        table.setGridColor(new Color(210, 180, 140));
+        table.setSelectionBackground(new Color(205, 133, 63));
+        table.setSelectionForeground(Color.WHITE);
+        table.setFillsViewportHeight(true);
+        table.getTableHeader().setReorderingAllowed(false);
+
+        // Configure column widths based on content type
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+
+        if (title.contains("Sales")) {
+            // Special column sizing for sales data
+            if (table.getColumnCount() >= 4) {
+                table.getColumnModel().getColumn(0).setPreferredWidth(120);  // Order ID
+                table.getColumnModel().getColumn(1).setPreferredWidth(180);  // Date
+                table.getColumnModel().getColumn(2).setPreferredWidth(180);  // Total Sales
+                table.getColumnModel().getColumn(3).setPreferredWidth(120);  // Employee ID
+            }
+        } else if (title.contains("Product")) {
+            // Product tables (2 columns)
+            if (table.getColumnCount() >= 2) {
+                table.getColumnModel().getColumn(0).setPreferredWidth(350); // Product name (left-aligned)
+                table.getColumnModel().getColumn(1).setPreferredWidth(150); // Quantity (centered)
+            }
+        } else if (title.contains("Stock")) {
+            // Low Stock tables (2 columns)
+            if (table.getColumnCount() >= 2) {
+                table.getColumnModel().getColumn(0).setPreferredWidth(350); // Product name (left-aligned)
+                table.getColumnModel().getColumn(1).setPreferredWidth(150); // Remaining Quantity (centered)
+            }
+        } else {
+            // Default sizing for other tables
+            for (int i = 0; i < table.getColumnCount(); i++) {
+                table.getColumnModel().getColumn(i).setPreferredWidth(200);
+            }
+        }
+
+        // Create scroll pane with preferred size
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setPreferredSize(new Dimension(700, 400));
+
+        // Add component listener to handle resizing
+        scrollPane.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                int width = scrollPane.getViewport().getWidth();
+                if (title.contains("Sales") && table.getColumnCount() >= 4) {
+                    // Maintain sales column ratios
+                    table.getColumnModel().getColumn(0).setPreferredWidth((int)(width * 0.17)); // Order ID
+                    table.getColumnModel().getColumn(1).setPreferredWidth((int)(width * 0.25)); // Date
+                    table.getColumnModel().getColumn(2).setPreferredWidth((int)(width * 0.33)); // Total Sales
+                    table.getColumnModel().getColumn(3).setPreferredWidth((int)(width * 0.25)); // Employee ID
+                } else if (table.getColumnCount() >= 2) {
+                    // Product/Low Stock tables
+                    table.getColumnModel().getColumn(0).setPreferredWidth((int)(width * 0.7)); // Product name
+                    table.getColumnModel().getColumn(1).setPreferredWidth((int)(width * 0.3)); // Quantity
+                }
+                table.doLayout();
+            }
+        });
+
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        // Footer
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setBackground(new Color(230, 215, 195));
+        footer.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(160, 120, 90)),
+                BorderFactory.createEmptyBorder(8, 15, 8, 15)
+        ));
+
+        JLabel countLabel = new JLabel(footerText);
+        countLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        countLabel.setForeground(new Color(101, 67, 33));
+
+        footer.add(countLabel, BorderLayout.CENTER);
+        panel.add(footer, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private static class TextAreaRenderer extends JTextArea implements TableCellRenderer {
+        public TextAreaRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setOpaque(true);
+            setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                       boolean isSelected, boolean hasFocus, int row, int column) {
+            setText(value == null ? "" : value.toString());
+
+            if (table.getRowHeight(row) < getPreferredSize().height) {
+                table.setRowHeight(row, getPreferredSize().height);
+            }
+
+            if (isSelected) {
+                setBackground(table.getSelectionBackground());
+                setForeground(table.getSelectionForeground());
+            } else {
+                setBackground(row % 2 == 0 ?
+                        new Color(250, 245, 235) :
+                        new Color(230, 215, 195));
+                setForeground(new Color(70, 50, 30));
+            }
+
+            return this;
+        }
+    }
+
+    private void openInventorySystem() {
+        if (inventorySystem == null || !inventorySystem.isDisplayable()) {
+            inventorySystem = new MacrinaSystem(currentUser, database);
+            inventorySystem.addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowClosed(WindowEvent e) {
+                    logActivity("Accessed Inventory System");
+                }
+            });
+        }
+        inventorySystem.setVisible(true);
+        inventorySystem.toFront();
+    }
+
+    private void openStockInSystem() {
+        if (stockInUI == null || !stockInUI.isDisplayable()) {
+            stockInUI = new StockInUI(database, currentUser);
+            stockInUI.addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowClosed(WindowEvent e) {
+                    stockInUI = null;
+                    logActivity("Accessed Stock-In System");
+                }
+            });
+        }
+        stockInUI.setVisible(true);
+        stockInUI.toFront();
+    }
+
+    private void openStockOutSystem() {
+        if (stockOutUI == null || !stockOutUI.isDisplayable()) {
+            stockOutUI = new StockOutUI(database, currentUser);
+            stockOutUI.addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowClosed(WindowEvent e) {
+                    stockOutUI = null;
+                    logActivity("Accessed Sales System");
+                }
+            });
+        }
+        stockOutUI.setVisible(true);
+        stockOutUI.toFront();
+    }
+
+    private void openLDSSystem() {
+        if (ldsUI == null || !ldsUI.isDisplayable()) {
+            try {
+                ldsUI = new LDSUI(database, currentUser);
+                ldsUI.addWindowListener(new WindowAdapter() {
+                    @Override
+                    public void windowClosed(WindowEvent e) {
+                        logActivity("Accessed LDS System");
+                    }
+                });
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this,
+                        "Failed to initialize LDS System: " + e.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+        }
+        ldsUI.setVisible(true);
+        ldsUI.toFront();
+    }
+
+    private void logActivity(String activity) {
+        String currentDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        String currentTime = new SimpleDateFormat("HH:mm:ss").format(new Date());
+
+        String activityWithIcon = activity;
+        if (activity.contains("Inventory")) {
+            activityWithIcon = "📦 " + activity;
+        } else if (activity.contains("Stock-In")) {
+            activityWithIcon = "📥 " + activity;
+        } else if (activity.contains("Sales")) {
+            activityWithIcon = "💰 " + activity;
+        } else if (activity.contains("LDS")) {
+            activityWithIcon = "⚠️ " + activity;
+        }
+
+        activityModel.addRow(new Object[]{currentDate, currentTime, activityWithIcon, currentUser});
+        logActivityToFile(currentDate, currentTime, activity, currentUser);
+
+        while (activityModel.getRowCount() > 8) {
+            activityModel.removeRow(0);
+        }
+    }
+
+    private void logActivityToFile(String date, String time, String activity, String user) {
+        try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(ACTIVITY_LOG_FILE, true)))) {
+            out.printf("%s,%s,%s,%s%n", date, time, activity, user);
+        } catch (IOException e) {
+            System.err.println("Error writing to activity log file: " + e.getMessage());
+        }
+    }
+
+    private void loadActivityLogs() {
+        File logFile = new File(ACTIVITY_LOG_FILE);
+        if (!logFile.exists()) {
+            return;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(ACTIVITY_LOG_FILE))) {
+            String line;
+            int count = 0;
+            // We'll only load the last 8 activities to match the display limit
+            List<String[]> lastActivities = new ArrayList<>();
+
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(",", 4);
+                if (parts.length >= 4) {
+                    lastActivities.add(parts);
+                    if (lastActivities.size() > 8) {
+                        lastActivities.remove(0);
+                    }
+                }
+            }
+
+            // Add them in reverse order (newest first)
+            for (int i = lastActivities.size() - 1; i >= 0; i--) {
+                String[] activity = lastActivities.get(i);
+                String activityWithIcon = activity[2];
+                if (activity[2].contains("Inventory")) {
+                    activityWithIcon = "📦 " + activity[2];
+                } else if (activity[2].contains("Stock-In")) {
+                    activityWithIcon = "📥 " + activity[2];
+                } else if (activity[2].contains("Sales")) {
+                    activityWithIcon = "💰 " + activity[2];
+                } else if (activity[2].contains("LDS")) {
+                    activityWithIcon = "⚠️ " + activity[2];
+                }
+                activityModel.addRow(new Object[]{activity[0], activity[1], activityWithIcon, activity[3]});
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error reading activity log file: " + e.getMessage());
+        }
+    }
+
+    private void cleanupResources() {
+        disposeIfValid(inventorySystem);
+        disposeIfValid(stockInUI);
+        disposeIfValid(stockOutUI);
+        disposeIfValid(ldsUI);
+    }
+
+    private void disposeIfValid(JFrame frame) {
+        if (frame != null) {
+            frame.dispose();
+        }
+    }
+}
