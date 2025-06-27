@@ -1,0 +1,396 @@
+// Enhanced CSVManager.java
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.text.SimpleDateFormat;
+
+public class CSVManager {
+    private static final String PRODUCTS_CSV = "data/products.csv";
+    private static final String LOW_STOCK_CSV = "data/low_stock.csv";
+    private static final String SALES_CSV = "data/sales.csv";
+    private static final String LDS_CSV = "data/lds_items.csv";
+    private static final int LOW_STOCK_THRESHOLD = 10;
+
+    static {
+        try {
+            Files.createDirectories(Paths.get("data"));
+
+            // Initialize files with headers if they don't exist or are empty
+            initializeFile(PRODUCTS_CSV, "Product Name,Total Quantity");
+            initializeFile(LOW_STOCK_CSV, "Product Name,Remaining Quantity");
+            initializeFile(SALES_CSV, "Order ID,Date,Total Sales,Employee ID");
+            initializeFile(LDS_CSV, "Product Name,Date,Type,Employee ID,Remarks");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void initializeFile(String filePath, String header) throws IOException {
+        if (!Files.exists(Paths.get(filePath)) || Files.size(Paths.get(filePath)) == 0) {
+            Files.write(Paths.get(filePath), (header + "\n").getBytes());
+        }
+    }
+
+    // Product methods
+    public static void updateProduct(String productName, int quantity) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(PRODUCTS_CSV));
+            List<String> updatedLines = new ArrayList<>();
+
+            // Always add header first
+            if (lines.isEmpty()) {
+                updatedLines.add("Product Name,Total Quantity");
+            } else {
+                updatedLines.add(lines.get(0)); // header
+            }
+
+            boolean found = false;
+            for (int i = 1; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (line.trim().isEmpty()) continue;
+
+                String[] parts = line.split(",", -1); // -1 keeps empty values
+                if (parts.length >= 1 && parts[0].equalsIgnoreCase(productName)) {
+                    // Update existing entry
+                    updatedLines.add(productName + "," + quantity);
+                    found = true;
+                } else if (parts.length >= 1) {
+                    // Keep other products
+                    updatedLines.add(line);
+                }
+            }
+
+            if (!found) {
+                // Add new product
+                updatedLines.add(productName + "," + quantity);
+            }
+
+            Files.write(Paths.get(PRODUCTS_CSV), updatedLines);
+            checkLowStock(productName, quantity);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static List<String[]> getProducts() {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(PRODUCTS_CSV));
+            List<String[]> data = new ArrayList<>();
+
+            for (String line : lines) {
+                if (!line.trim().isEmpty()) { // Skip empty lines
+                    data.add(line.split(","));
+                }
+            }
+            return data;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+
+    public static int getTotalProductsCount() {
+        List<String[]> products = getProducts();
+        if (products.isEmpty()) return 0;
+
+        // Count all non-empty lines after the header
+        int count = 0;
+        for (int i = 1; i < products.size(); i++) { // Skip header
+            String[] product = products.get(i);
+            if (product.length >= 1 && !product[0].trim().isEmpty()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    // Low stock methods
+    private static void checkLowStock(String productName, int quantity) {
+        if (quantity < LOW_STOCK_THRESHOLD) {
+            updateLowStock(productName, quantity);
+        } else {
+            removeFromLowStock(productName);
+        }
+    }
+
+    private static void updateLowStock(String productName, int quantity) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(LOW_STOCK_CSV));
+            List<String> updatedLines = new ArrayList<>();
+            boolean found = false;
+
+            updatedLines.add(lines.get(0)); // header
+
+            for (int i = 1; i < lines.size(); i++) {
+                String[] parts = lines.get(i).split(",");
+                if (parts[0].equalsIgnoreCase(productName)) {
+                    updatedLines.add(productName + "," + quantity);
+                    found = true;
+                } else {
+                    updatedLines.add(lines.get(i));
+                }
+            }
+
+            if (!found) {
+                updatedLines.add(productName + "," + quantity);
+            }
+
+            Files.write(Paths.get(LOW_STOCK_CSV), updatedLines);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void removeFromLowStock(String productName) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(LOW_STOCK_CSV));
+            List<String> updatedLines = new ArrayList<>();
+
+            updatedLines.add(lines.get(0)); // header
+
+            for (int i = 1; i < lines.size(); i++) {
+                String[] parts = lines.get(i).split(",");
+                if (!parts[0].equalsIgnoreCase(productName)) {
+                    updatedLines.add(lines.get(i));
+                }
+            }
+
+            Files.write(Paths.get(LOW_STOCK_CSV), updatedLines);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static List<String[]> getLowStockItems() {
+        return readCSV(LOW_STOCK_CSV);
+    }
+
+    public static int getTotalLowStockCount() {
+        List<String[]> lowStockItems = getLowStockItems();
+        return lowStockItems.size() - 1; // exclude header
+    }
+
+    // Sales methods
+    public static void recordSale(String orderId, String date, double totalSales, String employeeId) {
+        try {
+            String record = String.join(",",
+                    orderId,
+                    date,
+                    String.valueOf(totalSales),
+                    employeeId
+            ) + "\n";
+
+            Files.write(Paths.get(SALES_CSV), record.getBytes(), StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static List<String[]> getSalesByDate(String date) {
+        List<String[]> allSales = readCSV(SALES_CSV);
+        List<String[]> filtered = new ArrayList<>();
+
+        for (String[] sale : allSales) {
+            if (sale.length > 1 && sale[1].equals(date)) {
+                filtered.add(sale);
+            }
+        }
+
+        return filtered;
+    }
+
+    public static double getTotalSalesByDate(String date) {
+        List<String[]> sales = getSalesByDate(date);
+        double total = 0;
+
+        for (String[] sale : sales) {
+            try {
+                total += Double.parseDouble(sale[2]);
+            } catch (NumberFormatException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return total;
+    }
+
+    public static double getOverallTotalSales() {
+        List<String[]> allSales = readCSV(SALES_CSV);
+        double total = 0;
+
+        for (int i = 1; i < allSales.size(); i++) { // skip header
+            try {
+                total += Double.parseDouble(allSales.get(i)[2]);
+            } catch (NumberFormatException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return total;
+    }
+
+    public static Map<String, Double> getSalesByDateMap() {
+        List<String[]> allSales = getAllSales();
+        Map<String, Double> salesByDate = new TreeMap<>();
+
+        for (int i = 1; i < allSales.size(); i++) {
+            String[] row = allSales.get(i);
+            if (row.length >= 3) {
+                String date = row[1];
+                try {
+                    double amount = Double.parseDouble(row[2]);
+                    if (salesByDate.containsKey(date)) {
+                        salesByDate.put(date, salesByDate.get(date) + amount);
+                    } else {
+                        salesByDate.put(date, amount);
+                    }
+                } catch (NumberFormatException e) {
+                    // Skip invalid entries
+                }
+            }
+        }
+        return salesByDate;
+    }
+
+    public static Map<String, List<String[]>> getLDSByDateMap() {
+        List<String[]> allLDS = getAllLDSItems();
+        Map<String, List<String[]>> ldsByDate = new TreeMap<>();
+
+        for (int i = 1; i < allLDS.size(); i++) {
+            String[] row = allLDS.get(i);
+            if (row.length >= 2) {
+                String date = row[1];
+                if (!ldsByDate.containsKey(date)) {
+                    ldsByDate.put(date, new ArrayList<>());
+                }
+                ldsByDate.get(date).add(row);
+            }
+        }
+        return ldsByDate;
+    }
+
+    // LDS items methods
+    public static void recordLDSItem(String productName, String date, String type,
+                                     String employeeId, String remarks) {
+        try {
+            String record = String.join(",",
+                    productName,
+                    date,
+                    type,
+                    employeeId,
+                    remarks
+            ) + "\n";
+
+            Files.write(Paths.get(LDS_CSV), record.getBytes(), StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static List<String[]> getLDSItemsByDate(String date) {
+        List<String[]> allItems = readCSV(LDS_CSV);
+        List<String[]> filtered = new ArrayList<>();
+
+        for (String[] item : allItems) {
+            if (item.length > 1 && item[1].equals(date)) {
+                filtered.add(item);
+            }
+        }
+
+        return filtered;
+    }
+
+    public static int getTotalLDSItemsByDate(String date) {
+        return getLDSItemsByDate(date).size();
+    }
+
+    public static int getOverallTotalLDSItems() {
+        List<String[]> allItems = readCSV(LDS_CSV);
+        return allItems.size() - 1; // exclude header
+    }
+
+    public static List<String[]> getAllSales() {
+        return readCSV(SALES_CSV);
+    }
+
+    // In CSVManager.java
+    public static List<String[]> getAllLDSItems() {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(LDS_CSV));
+            List<String[]> data = new ArrayList<>();
+
+            // Skip empty lines and malformed entries
+            for (String line : lines) {
+                if (!line.trim().isEmpty()) {
+                    String[] parts = line.split(",", -1); // -1 keeps empty values
+                    if (parts.length >= 5) { // Ensure we have all columns
+                        data.add(parts);
+                    }
+                }
+            }
+            return data;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+
+    public static void removeProduct(String productName) {
+        try {
+            // Remove from products.csv
+            List<String> lines = Files.readAllLines(Paths.get(PRODUCTS_CSV));
+            List<String> updatedLines = new ArrayList<>();
+
+            // Keep header
+            if (!lines.isEmpty()) {
+                updatedLines.add(lines.get(0));
+            }
+
+            // Filter out the product to be removed
+            for (int i = 1; i < lines.size(); i++) {
+                String[] parts = lines.get(i).split(",");
+                if (parts.length >= 1 && !parts[0].equalsIgnoreCase(productName)) {
+                    updatedLines.add(lines.get(i));
+                }
+            }
+
+            Files.write(Paths.get(PRODUCTS_CSV), updatedLines);
+
+            // Remove from low_stock.csv if present
+            List<String> lowStockLines = Files.readAllLines(Paths.get(LOW_STOCK_CSV));
+            List<String> updatedLowStockLines = new ArrayList<>();
+
+            if (!lowStockLines.isEmpty()) {
+                updatedLowStockLines.add(lowStockLines.get(0));
+            }
+
+            for (int i = 1; i < lowStockLines.size(); i++) {
+                String[] parts = lowStockLines.get(i).split(",");
+                if (parts.length >= 1 && !parts[0].equalsIgnoreCase(productName)) {
+                    updatedLowStockLines.add(lowStockLines.get(i));
+                }
+            }
+
+            Files.write(Paths.get(LOW_STOCK_CSV), updatedLowStockLines);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Helper method to read CSV files
+    private static List<String[]> readCSV(String filePath) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(filePath));
+            List<String[]> data = new ArrayList<>();
+
+            for (String line : lines) {
+                data.add(line.split(","));
+            }
+
+            return data;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+}
