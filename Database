@@ -1,0 +1,520 @@
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.io.*;
+import java.util.*;
+
+public class Database {
+    private final File filename;
+
+    public Database(String name) {
+        filename = new File(name);
+        if (!filename.exists()) {
+            try {
+                filename.createNewFile();
+            } catch (IOException e) {
+                showError("Could not create database file: " + e.getMessage());
+                System.exit(1);
+            }
+        }
+    }
+
+    public Map<String, String> getSupplierMap() {
+        Map<String, String> supplierMap = new LinkedHashMap<>();
+        supplierMap.put("NCCC", "SID101");
+        supplierMap.put("Gaisano", "SID102");
+        supplierMap.put("SM", "SID103");
+        return supplierMap;
+    }
+
+    // ENHANCED: Now returns boolean for success/failure tracking
+    public boolean addStockByProductID(String productID, int quantityToAdd) {
+        List<String> lines = new ArrayList<>();
+        boolean updated = false;
+
+        try (Scanner scanner = new Scanner(filename)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                if (line.trim().isEmpty()) {
+                    lines.add(line);
+                    continue;
+                }
+
+                String[] parts = line.split("\t", -1);
+                if (parts.length > 6 && parts[0].equalsIgnoreCase(productID)) {
+                    try {
+                        int currentQty = parts[6].isEmpty() ? 0 : Integer.parseInt(parts[6]);
+                        int newQty = currentQty + quantityToAdd;
+                        parts[6] = String.valueOf(newQty);
+                        line = String.join("\t", parts);
+                        updated = true;
+                        System.out.println("Updated stock for " + productID + ": " + currentQty + " -> " + newQty);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid quantity format for product " + productID);
+                        return false;
+                    }
+                }
+                lines.add(line);
+            }
+        } catch (FileNotFoundException e) {
+            showError("Database file not found: " + filename.getAbsolutePath());
+            return false;
+        }
+
+        if (updated) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(filename, false))) {
+                for (String l : lines) {
+                    writer.println(l);
+                }
+                return true;
+            } catch (IOException e) {
+                showError("Error updating product stock: " + e.getMessage());
+                return false;
+            }
+        } else {
+            System.err.println("Product not found: " + productID);
+            return false;
+        }
+    }
+
+    public void saveAllRecords(String data) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(filename))) {
+            writer.print(data);
+        } catch (IOException e) {
+            showError("Error saving database: " + e.getMessage());
+            throw new RuntimeException("Failed to save records", e);
+        }
+    }
+
+    public void appendRecord(String record) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(filename, true))) {
+            writer.print(record);
+            writer.flush();
+        } catch (IOException e) {
+            showError("Error appending to database: " + e.getMessage());
+            throw new RuntimeException("Failed to append record", e);
+        }
+    }
+
+    public List<String> getEmployeeIDs() {
+        // Temporary implementation with test data
+        return Arrays.asList("EMP001", "EMP002", "EMP003");
+    }
+
+    public void displayRecord(DefaultTableModel model) {
+        SwingUtilities.invokeLater(() -> {
+            try (Scanner read = new Scanner(new FileReader(filename))) {
+                model.setRowCount(0);
+                if (filename.length() == 0) return;
+
+                while (read.hasNextLine()) {
+                    String line = read.nextLine().trim();
+                    if (line.isEmpty() || line.startsWith("#")) continue;
+
+                    String[] values = line.split("\t", -1);
+                    if (values.length != model.getColumnCount()) {
+                        showError("Data format error in line: " + line);
+                        continue;
+                    }
+
+                    Vector<Object> data = new Vector<>();
+                    for (int i = 0; i < values.length; i++) {
+                        String val = values[i].isEmpty() ? " " : values[i];
+                        if (i == 7) {
+                            data.add(Boolean.parseBoolean(val));
+                        } else {
+                            data.add(val);
+                        }
+                    }
+                    model.addRow(data);
+                }
+            } catch (FileNotFoundException e) {
+                showError("Database file not found: " + filename.getAbsolutePath());
+            } catch (Exception e) {
+                showError("Error reading database: " + e.getMessage());
+            }
+        });
+    }
+
+    public void saveRecord(DefaultTableModel model) {
+        StringBuilder sb = new StringBuilder();
+        int cols = model.getColumnCount();
+        int rows = model.getRowCount();
+
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                Object val = model.getValueAt(row, col);
+                if (val instanceof Boolean) {
+                    sb.append(val.toString());
+                } else {
+                    String s = val == null ? "" : val.toString().replace("\t", " ").replace("\n", " ");
+                    sb.append(s);
+                }
+                if (col < cols - 1) sb.append("\t");
+            }
+            sb.append(System.lineSeparator());
+        }
+
+        saveAllRecords(sb.toString());
+    }
+
+    public List<String> getAllProductIDs() {
+        List<String> productIDs = new ArrayList<>();
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t");
+                if (parts.length >= 1) {
+                    productIDs.add(parts[0]);
+                }
+            }
+        } catch (IOException e) {
+            showError("Failed to load product IDs: " + e.getMessage());
+        }
+        return productIDs;
+    }
+
+    // OPTIMIZED: This method now returns clean ID->Name mapping without duplication
+    public Map<String, String> getProductsWithNames() {
+        Map<String, String> products = new LinkedHashMap<>();
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+
+                String[] parts = line.split("\t");
+                if (parts.length >= 2) {
+                    products.put(parts[0], parts[1]); // ID -> Name
+                }
+            }
+        } catch (IOException e) {
+            showError("Failed to load products: " + e.getMessage());
+        }
+        return products;
+    }
+
+    public String getProductPrice(String productID) {
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t");
+                if (parts.length > 5 && parts[0].equalsIgnoreCase(productID)) {
+                    // Return the price, ensure it's not empty
+                    String price = parts[5];
+                    return price.isEmpty() ? "0.00" : price;
+                }
+            }
+        } catch (IOException e) {
+            showError("Error finding product price: " + e.getMessage());
+        }
+        return "0.00";
+    }
+
+    public int getProductStock(String productID) {
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t");
+                if (parts.length > 6 && parts[0].equalsIgnoreCase(productID)) {
+                    try {
+                        String stockStr = parts[6];
+                        if (stockStr.isEmpty()) return 0;
+                        int stock = Integer.parseInt(stockStr);
+                        return Math.max(stock, 0); // Ensure never negative
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid stock format for product " + productID + ": " + parts[6]);
+                        return 0;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            showError("Error checking stock: " + e.getMessage());
+        }
+        return 0;
+    }
+
+    // ENHANCED: Now returns boolean for success/failure tracking
+    public boolean deductStockByProductID(String productID, int quantityToDeduct) {
+        if (quantityToDeduct <= 0) {
+            System.err.println("Invalid quantity to deduct: " + quantityToDeduct);
+            return false;
+        }
+
+        List<String> lines = new ArrayList<>();
+        boolean updated = false;
+
+        try (Scanner scanner = new Scanner(filename)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                if (line.trim().isEmpty()) {
+                    lines.add(line);
+                    continue;
+                }
+
+                String[] parts = line.split("\t", -1);
+                if (parts.length > 6 && parts[0].equalsIgnoreCase(productID)) {
+                    try {
+                        int currentQty = parts[6].isEmpty() ? 0 : Integer.parseInt(parts[6]);
+                        if (currentQty < quantityToDeduct) {
+                            System.err.println("Insufficient stock for " + productID +
+                                    ". Available: " + currentQty + ", Requested: " + quantityToDeduct);
+                            return false;
+                        }
+                        int newQty = currentQty - quantityToDeduct;
+                        parts[6] = String.valueOf(newQty);
+                        line = String.join("\t", parts);
+                        updated = true;
+                        System.out.println("Deducted stock for " + productID + ": " +
+                                currentQty + " -> " + newQty);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid quantity format for product " + productID);
+                        return false;
+                    }
+                }
+                lines.add(line);
+            }
+        } catch (FileNotFoundException e) {
+            showError("Database file not found: " + filename.getAbsolutePath());
+            return false;
+        }
+
+        if (updated) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(filename, false))) {
+                for (String l : lines) {
+                    writer.println(l);
+                }
+                return true;
+            } catch (IOException e) {
+                showError("Error updating product stock: " + e.getMessage());
+                return false;
+            }
+        } else {
+            System.err.println("Product not found: " + productID);
+            return false;
+        }
+    }
+
+    public String getProductDetails(String productID) {
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t");
+                if (parts.length >= 7 && parts[0].equalsIgnoreCase(productID)) {
+                    String name = parts[1];
+                    String stock = parts[6].isEmpty() ? "0" : parts[6];
+                    return name + " (Stock: " + stock + ")";
+                }
+            }
+        } catch (IOException e) {
+            showError("Error finding product details: " + e.getMessage());
+        }
+        return "Product not found";
+    }
+
+    // Helper method to get product name by ID
+    public String getProductName(String productID) {
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t");
+                if (parts.length >= 2 && parts[0].equalsIgnoreCase(productID)) {
+                    return parts[1];
+                }
+            }
+        } catch (IOException e) {
+            showError("Error finding product name: " + e.getMessage());
+        }
+        return "Unknown Product";
+    }
+
+    // Helper method to check if product exists
+    public boolean productExists(String productID) {
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t");
+                if (parts.length >= 1 && parts[0].equalsIgnoreCase(productID)) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            showError("Error checking product existence: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Enhanced method to get all products with detailed information
+     * Returns map with ProductID as key and formatted display string as value
+     * Format: "ProductName (Stock: X, Price: ₱Y.YY)"
+     */
+    public Map<String, String> getProductDetailsMap() {
+        Map<String, String> detailsMap = new LinkedHashMap<>();
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+
+                String[] parts = line.split("\t");
+                if (parts.length >= 7) { // Ensure we have all required fields
+                    String productID = parts[0];
+                    String productName = parts[1];
+                    String price = parts[5].isEmpty() ? "0.00" : parts[5];
+                    String stock = parts[6].isEmpty() ? "0" : parts[6];
+
+                    String details = String.format("%s (Stock: %s, Price: ₱%s)",
+                            productName, stock, price);
+                    detailsMap.put(productID, details);
+                }
+            }
+        } catch (IOException e) {
+            showError("Failed to load product details: " + e.getMessage());
+        }
+        return detailsMap;
+    }
+
+    /**
+     * Method to get low stock products (stock <= threshold)
+     * Useful for inventory management and alerts
+     */
+    public Map<String, Integer> getLowStockProducts(int threshold) {
+        Map<String, Integer> lowStockMap = new LinkedHashMap<>();
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+
+                String[] parts = line.split("\t");
+                if (parts.length > 6) {
+                    String productID = parts[0];
+                    String productName = parts[1];
+                    try {
+                        int stock = parts[6].isEmpty() ? 0 : Integer.parseInt(parts[6]);
+                        if (stock <= threshold) {
+                            lowStockMap.put(productID + " - " + productName, stock);
+                        }
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid stock format for product " + productID);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            showError("Error checking low stock products: " + e.getMessage());
+        }
+        return lowStockMap;
+    }
+
+    /**
+     * Method to get sales analytics data
+     * This could be expanded to work with Order files for comprehensive reporting
+     */
+    public Map<String, Object> getInventoryStats() {
+        Map<String, Object> stats = new HashMap<>();
+        int totalProducts = 0;
+        int totalStock = 0;
+        double totalValue = 0.0;
+        int outOfStockCount = 0;
+
+        try (Scanner scanner = new Scanner(new FileReader(filename))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+
+                String[] parts = line.split("\t");
+                if (parts.length >= 7) {
+                    totalProducts++;
+
+                    try {
+                        int stock = parts[6].isEmpty() ? 0 : Integer.parseInt(parts[6]);
+                        double price = parts[5].isEmpty() ? 0.0 : Double.parseDouble(parts[5]);
+
+                        totalStock += stock;
+                        totalValue += (stock * price);
+
+                        if (stock == 0) {
+                            outOfStockCount++;
+                        }
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid number format in product data");
+                    }
+                }
+            }
+        } catch (IOException e) {
+            showError("Error calculating inventory stats: " + e.getMessage());
+        }
+
+        stats.put("totalProducts", totalProducts);
+        stats.put("totalStock", totalStock);
+        stats.put("totalValue", totalValue);
+        stats.put("outOfStockCount", outOfStockCount);
+        stats.put("averageStockPerProduct", totalProducts > 0 ? (double)totalStock / totalProducts : 0.0);
+
+        return stats;
+    }
+
+    /**
+     * Batch stock update method for efficiency
+     * Useful when processing multiple stock changes at once
+     */
+    public boolean batchUpdateStock(Map<String, Integer> stockUpdates) {
+        List<String> lines = new ArrayList<>();
+        Set<String> updatedProducts = new HashSet<>();
+
+        try (Scanner scanner = new Scanner(filename)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                if (line.trim().isEmpty()) {
+                    lines.add(line);
+                    continue;
+                }
+
+                String[] parts = line.split("\t", -1);
+                if (parts.length > 6) {
+                    String productID = parts[0];
+                    if (stockUpdates.containsKey(productID)) {
+                        try {
+                            int currentQty = parts[6].isEmpty() ? 0 : Integer.parseInt(parts[6]);
+                            int adjustment = stockUpdates.get(productID);
+                            int newQty = currentQty + adjustment;
+                            parts[6] = String.valueOf(newQty);
+                            line = String.join("\t", parts);
+                            updatedProducts.add(productID);
+                        } catch (NumberFormatException e) {
+                            System.err.println("Invalid quantity format for product " + productID);
+                            return false;
+                        }
+                    }
+                }
+                lines.add(line);
+            }
+        } catch (FileNotFoundException e) {
+            showError("Database file not found: " + filename.getAbsolutePath());
+            return false;
+        }
+
+        // Save updated data
+        if (!updatedProducts.isEmpty()) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(filename, false))) {
+                for (String l : lines) {
+                    writer.println(l);
+                }
+                System.out.println("Batch updated stock for " + updatedProducts.size() + " products");
+                return true;
+            } catch (IOException e) {
+                showError("Error in batch stock update: " + e.getMessage());
+                return false;
+            }
+        }
+
+        return updatedProducts.isEmpty(); // Return true if no updates were needed
+    }
+
+    private void showError(String message) {
+        JOptionPane.showMessageDialog(null, message, "Database Error", JOptionPane.ERROR_MESSAGE);
+    }
+}
