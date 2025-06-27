@@ -1,0 +1,124 @@
+// UserManager.java
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+public class UserManager {
+    private static final String USERS_FILE = "users.txt";
+    private List<User> users;
+
+    public UserManager() {
+        this.users = new ArrayList<>();
+        loadUsers();
+
+        // Create default admin if no users exist
+        if (users.isEmpty()) {
+            String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+            addUser(new User("admin", "Administrator", "Admin", date, date, "Active", "admin123"));
+        }
+    }
+
+    private void loadUsers() {
+        File file = new File(USERS_FILE);
+        if (!file.exists()) return;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(USERS_FILE))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(",");
+                if (parts.length == 7) {
+                    users.add(new User(
+                            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]
+                    ));
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveUsers() {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(USERS_FILE))) {
+            for (User user : users) {
+                writer.write(String.join(",",
+                        user.getUsername(),
+                        user.getFullName(),
+                        user.getRole(),
+                        user.getDateCreated(),
+                        user.getLastLogin(),
+                        user.getStatus(),
+                        user.getPassword()));
+                writer.newLine();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public boolean authenticate(String username, String password) {
+        for (User user : users) {
+            if (user.getUsername().equals(username) &&
+                    user.getPassword().equals(password) &&
+                    user.getStatus().equals("Active")) {
+                // Update last login
+                user.setLastLogin(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+                saveUsers();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public User getUser(String username) {
+        for (User user : users) {
+            if (user.getUsername().equals(username)) {
+                return user;
+            }
+        }
+        return null;
+    }
+
+    public boolean addUser(User newUser) {
+        if (getUser(newUser.getUsername()) != null) {
+            return false; // User already exists
+        }
+        users.add(newUser);
+        saveUsers();
+        return true;
+    }
+
+    public boolean updateUser(User updatedUser) {
+        for (int i = 0; i < users.size(); i++) {
+            if (users.get(i).getUsername().equals(updatedUser.getUsername())) {
+                users.set(i, updatedUser);
+                saveUsers();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean deleteUser(String username) {
+        User user = getUser(username);
+        if (user != null) {
+            user.setStatus("Inactive");
+            saveUsers();
+            return true;
+        }
+        return false;
+    }
+
+    public List<User> getAllUsers() {
+        return new ArrayList<>(users);
+    }
+
+    public boolean changePassword(String username, String currentPassword, String newPassword) {
+        User user = getUser(username);
+        if (user != null && user.getPassword().equals(currentPassword)) {
+            user.setPassword(newPassword);
+            saveUsers();
+            return true;
+        }
+        return false;
+    }
+}
